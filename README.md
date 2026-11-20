@@ -54,8 +54,11 @@ Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI
   (drums / bass / other / vocals). Stems load onto the deck as sample-aligned layers with
   per-stem faders.
 - **Keyboard control** (see map below).
-- **MIDI learn**: click *learn* next to any action, then touch a pad/knob/fader on your
-  controller. Bindings persist. Absolute CCs can drive the crossfader.
+- **MIDI learn + watch**: click *learn* next to any action, then touch a pad/knob/fader.
+  **Watch mode** logs every incoming MIDI message — the way to discover what the K.O. II's
+  assignable fader and X/Y knobs actually transmit. Bindings persist. Continuous params
+  (tempo, 3-band EQ, filter, trim, volume, delay wet/fb, crossfader, sampler volume) take
+  absolute CC; everything else is a momentary pad.
 - **Crate**: tracks, BPM, key, cue points, hot cues and stem status persist in
   `~/Library/Application Support/vibedeck/crate.json`.
 - **Streaming-ready**: SoundCloud integration built in — OAuth 2.1 + PKCE login, search,
@@ -140,6 +143,8 @@ Design notes:
 - [x] SoundCloud provider (OAuth 2.1 + PKCE, progressive stream → PCM, session-only cache, stems gated off)
 - [ ] TIDAL catalog enrichment (BPM/key backfill for the crate)
 - [ ] Beatgrid editing (tap tempo, nudge offset, half/double buttons)
+- [ ] MIDI clock out (lock a K.O. II pattern to deck BPM)
+- [ ] External input channel (K.O. II line/USB in as a live mixer channel)
 - [ ] Loop rolls (beat-loop 1/2/4/8 with worklet-friendly seek logic)
 - [ ] Waveform overview strip + library search/sort
 - [ ] Stem-aware recording of the master bus

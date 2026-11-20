@@ -25,6 +25,8 @@ export class MidiRouter {
   onAction?: (actionId: string, msg: MidiMessage) => void
   onDevices?: (names: string[]) => void
   onBindingsChanged?: () => void
+  /** fires for every incoming message, bound or not — powers watch mode */
+  onRaw?: (msg: MidiMessage) => void
 
   async init(): Promise<boolean> {
     if (typeof navigator === 'undefined' || !('requestMIDIAccess' in navigator)) return false
@@ -133,6 +135,7 @@ export class MidiRouter {
     if (!data) return
     const msg = this.parse(data)
     if (!msg) return
+    this.onRaw?.(msg)
 
     if (this.seq) {
       const actionId = this.seq.actions.shift() as string

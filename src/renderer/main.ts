@@ -839,6 +839,15 @@ function tick(): void {
     for (let i = 0; i < r.hotcueBtns.length; i++) {
       r.hotcueBtns[i].classList.toggle('set', deck.hotCues[i] != null)
     }
+    const eq = deck.eqDb
+    const eqSliders: [HTMLInputElement, number][] = [
+      [r.eqLow, eq.low],
+      [r.eqMid, eq.mid],
+      [r.eqHigh, eq.high]
+    ]
+    for (const [slider, db] of eqSliders) {
+      if (document.activeElement !== slider) slider.value = String(db.toFixed(1))
+    }
     wfFor(deck).draw(deck)
   }
   if (document.activeElement !== refs.xfader) {
@@ -860,6 +869,7 @@ const ACTION_IDS = [
   'deckA.setHotcue1', 'deckA.setHotcue2', 'deckA.setHotcue3', 'deckA.setHotcue4',
   'deckA.delay', 'deckA.delayFrac', 'deckA.reverb', 'deckA.echoOut',
   'deckA.filter', 'deckA.volume', 'deckA.delayWet', 'deckA.delayFb', 'deckA.trim',
+  'deckA.tempo', 'deckA.eqLow', 'deckA.eqMid', 'deckA.eqHigh',
   'deckA.loop1', 'deckA.loop2', 'deckA.loop4', 'deckA.loop8', 'deckA.loopLatch', 'deckA.loopExit',
   'deckB.play', 'deckB.cue', 'deckB.setCue', 'deckB.sync', 'deckB.keylock',
   'deckB.bendDown', 'deckB.bendUp', 'deckB.cueMix',
@@ -867,6 +877,7 @@ const ACTION_IDS = [
   'deckB.setHotcue1', 'deckB.setHotcue2', 'deckB.setHotcue3', 'deckB.setHotcue4',
   'deckB.delay', 'deckB.delayFrac', 'deckB.reverb', 'deckB.echoOut',
   'deckB.filter', 'deckB.volume', 'deckB.delayWet', 'deckB.delayFb', 'deckB.trim',
+  'deckB.tempo', 'deckB.eqLow', 'deckB.eqMid', 'deckB.eqHigh',
   'deckB.loop1', 'deckB.loop2', 'deckB.loop4', 'deckB.loop8', 'deckB.loopLatch', 'deckB.loopExit',
   'sampler.pad1', 'sampler.pad2', 'sampler.pad3', 'sampler.pad4',
   'sampler.pad5', 'sampler.pad6', 'sampler.pad7', 'sampler.pad8', 'sampler.volume',
@@ -899,6 +910,34 @@ midi.onBindingsChanged = renderMidiPanel
 midi.onDevices = (names) => {
   refs.midiDevices.textContent = names.length ? names.join(', ') : 'no devices'
 }
+
+// watch mode: discover what a controller actually transmits
+let midiWatching = false
+let watchLastKey = ''
+let watchLastTs = 0
+
+midi.onRaw = (msg) => {
+  if (!midiWatching) return
+  const now = performance.now()
+  const key = `${msg.type}:${msg.channel}:${msg.control}`
+  if (key === watchLastKey && now - watchLastTs < 250) {
+    watchLastTs = now
+    return
+  }
+  watchLastKey = key
+  watchLastTs = now
+  log(`midi in: ${msg.type.toUpperCase()} ch${msg.channel + 1} ctrl ${msg.control} = ${msg.value}`)
+}
+
+refs.midiWatch.addEventListener('click', () => {
+  midiWatching = !midiWatching
+  refs.midiWatch.textContent = midiWatching ? 'watching…' : 'watch midi'
+  refs.midiWatch.classList.toggle('active', midiWatching)
+  if (midiWatching) {
+    watchLastKey = ''
+    log('midi watch ON — turn every knob/fader and press every pad you care about; the log shows what they send')
+  }
+})
 midi.onAction = (actionId, msg) => {
   // sampler pads are velocity-sensitive
   const sp = /^sampler\.pad([1-8])$/.exec(actionId)
@@ -937,6 +976,23 @@ midi.onAction = (actionId, msg) => {
       }
       if (actionId.endsWith('.trim')) {
         deck.setTrim((msg.value / 127) * 24 - 12)
+        return
+      }
+      if (actionId.endsWith('.tempo')) {
+        releaseSyncIfSlave(deck)
+        deck.setTempoRate(0.92 + (msg.value / 127) * 0.16) // full ±8% pitch range
+        return
+      }
+      if (actionId.endsWith('.eqLow')) {
+        deck.setEqBand('low', (msg.value / 127) * 32 - 26)
+        return
+      }
+      if (actionId.endsWith('.eqMid')) {
+        deck.setEqBand('mid', (msg.value / 127) * 32 - 26)
+        return
+      }
+      if (actionId.endsWith('.eqHigh')) {
+        deck.setEqBand('high', (msg.value / 127) * 32 - 26)
         return
       }
     }

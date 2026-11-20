@@ -50,21 +50,55 @@ sync 63, hot cues 64–67, echo 68, delay 69, fraction 70, reverb 71).
 Set hot cues 1–4 (72–75), headphone cue (76), key lock (77), loop rolls 1/2/4/8 (78–81),
 loop exit (82), loop latch (83).
 
-## Faders and knobs
+## Fader and X/Y knobs
 
-The K.O. II's faders and X/Y knobs aren't publicly documented as sending standard MIDI
-CC, so bind them with **learn** or the **auto-map wizard** (MIDI panel). Suggested
-assignment, DJ-style:
+Hardware reality: the K.O. II has **one context-assignable FADER** (hold FADER + press a
+pad to reassign it — the 12 parameters are printed above the pads: Tune, Velocity, Mod,
+Attack, Release, Pan, LPF, HPF, FX Send, Level, Pitch, Time) and **two knobs (X/Y)**,
+which are context-sensitive for the K.O. II's own modes.
 
-- Group A fader → deck A volume
-- Group B fader → deck A filter
-- Group C fader → deck B volume
-- Group D fader → deck B filter
-- X knob → crossfader
-- Y knob → master
+What they transmit over USB MIDI is not fully documented — pads definitely send notes
+(36–83); CC transmission from the fader/knobs depends on assignment and firmware. Find out
+in seconds with **watch mode**: MIDI panel → `watch midi` → move every control; the log
+prints each message (`CC ch1 ctrl 1 = 64`). Anything that shows up can be bound with
+*learn*.
 
-The wizard walks 29 actions in a fixed, sensible order (transport, hot cues, FX,
-filters, volumes, crossfader) — touch each control once and you're mapped.
+Good bets to try (then bind what transmits):
+
+- FADER assigned to **Mod** (classic CC #1) → bind to `mix.crossfade` or a deck volume
+- FADER assigned to **Level** → group volume, may transmit
+- X / Y knobs → `deckA.filter` / `deckB.filter`, or `deckA.tempo` / `deckB.tempo`
+  (tempo = full ±8% pitch fader), or EQ bands (`deckX.eqLow/eqMid/eqHigh`)
+
+Everything continuous in vibedeck is learnable: tempo, EQ (3 bands), filter, trim,
+volume, delay wet/feedback, crossfader, sampler volume. Momentary pads cover transport,
+hot cues, loops, FX toggles, echo-out, cue-mix.
+
+## The K.O. II's own FX panel, two ways
+
+**1. Map vibedeck's FX to its controls** (software): pads already trigger delay/reverb/
+echo-out per the preset above; knobs/fader can ride wet, feedback and filter via learn.
+
+**2. Use the K.O. II as an outboard FX unit for vibedeck** (hardware): the K.O. II is
+also a USB audio device with live-input processing — its guide lists *live input FX* and
+system setting 511 (`smp > usb > mon`: sampler + live monitoring). Routing recipe:
+
+```
+vibedeck deck → macOS multi-output device → K.O. II USB input
+K.O. II live input FX (punch-in pads + X/Y) → K.O. II line out → speakers
+```
+
+Set the K.O. II to live monitoring (system code 511), send one vibedeck channel (e.g. via
+an aggregate device channel) into it, smash its pressure-sensitive punch-in FX, and cable
+its line out back to your rig. USB round-trip adds some latency — fine for a send/FX
+channel, not for the main mix path.
+
+## Sequencer
+
+The K.O. II's sequencer can drive external MIDI (pads send notes from patterns). Vibedeck
+does not yet send **MIDI clock**, so its patterns can't lock to deck BPM automatically —
+that's on the roadmap (`clock out at deck tempo`); until then, match tempos by hand or
+let the K.O. II be clock master (system 102) and set vibedeck's decks to match.
 
 ## Notes
 

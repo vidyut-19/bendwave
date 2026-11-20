@@ -135,6 +135,7 @@ main {
 
 .midi-tools { display: flex; gap: 6px; margin-bottom: 6px; }
 .midi-tools button { flex: 1; font-size: 11px; padding: 3px 4px; }
+.midi-tools button.active { background: var(--good); border-color: var(--good); color: #08130b; }
 .midi-wizard-status { color: var(--accent-b); font-size: 11px; margin-bottom: 6px; min-height: 1em; }
 
 .transport { display: flex; gap: 6px; margin-top: auto; }

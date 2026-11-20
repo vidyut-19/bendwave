@@ -161,10 +161,23 @@ export class Deck {
   }
 
   setEQ(lowDb: number, midDb: number, highDb: number): void {
+    this.eqState = { low: lowDb, mid: midDb, high: highDb }
     this.low.gain.value = lowDb
     this.mid.gain.value = midDb
     this.high.gain.value = highDb
   }
+
+  /** single-band EQ set (for CC control) — other bands keep their values */
+  setEqBand(band: 'low' | 'mid' | 'high', db: number): void {
+    const next = { ...this.eqState, [band]: db }
+    this.setEQ(next.low, next.mid, next.high)
+  }
+
+  get eqDb(): { low: number; mid: number; high: number } {
+    return { ...this.eqState }
+  }
+
+  private eqState = { low: 0, mid: 0, high: 0 }
 
   /** DJ filter: -1 = full lowpass, +1 = full highpass */
   setFilter(v: number): void {

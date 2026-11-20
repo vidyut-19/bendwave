@@ -48,6 +48,7 @@ export interface AppRefs {
   midiActions: HTMLElement
   midiWizard: HTMLButtonElement
   midiKo2: HTMLButtonElement
+  midiWatch: HTMLButtonElement
   midiWizardStatus: HTMLElement
   streamStatus: HTMLElement
   scConnect: HTMLButtonElement
@@ -211,6 +212,7 @@ export function buildApp(root: HTMLElement): AppRefs {
       <div class="midi-tools">
         <button class="midi-wizard">auto-map wizard</button>
         <button class="midi-ko2">load K.O. II preset</button>
+        <button class="midi-watch">watch midi</button>
       </div>
       <div class="midi-wizard-status"></div>
       <div class="midi-actions"></div>
@@ -238,6 +240,7 @@ export function buildApp(root: HTMLElement): AppRefs {
     midiActions: footer.querySelector('.midi-actions') as HTMLElement,
     midiWizard: footer.querySelector('.midi-wizard') as HTMLButtonElement,
     midiKo2: footer.querySelector('.midi-ko2') as HTMLButtonElement,
+    midiWatch: footer.querySelector('.midi-watch') as HTMLButtonElement,
     midiWizardStatus: footer.querySelector('.midi-wizard-status') as HTMLElement,
     streamStatus: footer.querySelector('.stream-status') as HTMLElement,
     scConnect: footer.querySelector('.sc-connect') as HTMLButtonElement,
