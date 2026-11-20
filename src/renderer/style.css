@@ -1,0 +1,140 @@
+:root {
+  --bg: #0b0d10;
+  --panel: #14181d;
+  --panel-2: #1a1f26;
+  --line: #262c34;
+  --text: #c9d1d9;
+  --dim: #7d8590;
+  --accent: #ff5c39;
+  --accent-b: #38bdf8;
+  --good: #4ade80;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  user-select: none;
+}
+
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+header h1 { font-size: 14px; margin: 0; letter-spacing: 0.08em; }
+header .hint { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+button {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+button:hover { border-color: #3b444f; }
+button.active { background: var(--good); color: #08130b; border-color: var(--good); }
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 220px 1fr;
+  gap: 10px;
+  padding: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+.deck, .mixer {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.deck.focused { border-color: var(--dim); }
+
+.deck-head { display: flex; align-items: baseline; gap: 8px; }
+.deck-label { font-weight: 700; letter-spacing: 0.1em; }
+.deck[data-deck='A'] .deck-label { color: var(--accent); }
+.deck[data-deck='B'] .deck-label { color: var(--accent-b); }
+.track-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.deck-stats { display: flex; gap: 14px; color: var(--dim); }
+.deck-stats .bpm { color: var(--text); font-weight: 700; min-width: 5ch; }
+
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rate-row input { flex: 1; }
+.rate-val { min-width: 7ch; text-align: right; color: var(--dim); }
+.eq-row label { display: flex; align-items: center; gap: 6px; color: var(--dim); flex-wrap: wrap; font-size: 12px; }
+.eq-row input { width: 84px; }
+
+.stems-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.stems-row[hidden] { display: none; }
+.stem { display: flex; flex-direction: column; gap: 2px; font-size: 10px; color: var(--dim); }
+
+.transport { display: flex; gap: 6px; margin-top: auto; }
+.t-btn { flex: 1; padding: 8px 6px; }
+.t-btn.sync { border-color: var(--accent-b); }
+.deck[data-deck='A'] .t-btn.play.active { background: var(--accent); border-color: var(--accent); color: #1a0700; }
+.deck[data-deck='B'] .t-btn.play.active { background: var(--accent-b); border-color: var(--accent-b); color: #03151d; }
+
+.mixer { justify-content: center; gap: 14px; }
+.mixer .xf-row { display: flex; align-items: center; gap: 8px; }
+.mixer .xf-row input { flex: 1; }
+
+footer {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 10px;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+  height: 24vh;
+}
+
+.crate, .midi-panel, .log {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  overflow: auto;
+  min-height: 0;
+}
+.panel-title { font-size: 11px; letter-spacing: 0.12em; color: var(--dim); margin-bottom: 6px; }
+
+.crate ul { list-style: none; margin: 0; padding: 0; }
+.crate li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.crate li:hover { background: var(--panel-2); }
+.crate-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crate-meta { color: var(--dim); white-space: nowrap; font-size: 11px; }
+
+.midi-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.midi-row .midi-action { flex: 1; font-size: 11px; }
+.midi-row .midi-binding { color: var(--dim); min-width: 11ch; font-size: 11px; }
+.midi-row.learning .midi-action { color: var(--accent-b); }
+.midi-row button { padding: 1px 6px; font-size: 11px; }
+
+.log { font-size: 11px; color: var(--dim); }
+.log div { padding: 1px 0; border-bottom: 1px dotted #1c222a; }
+
+input[type='range'] { accent-color: #ff5c39; }
+.deck[data-deck='B'] input[type='range'] { accent-color: #38bdf8; }
