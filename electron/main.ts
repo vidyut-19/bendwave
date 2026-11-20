@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
 import { spawn } from 'node:child_process'
+import { registerSoundCloud } from './soundcloud'
 
 const dev = process.argv.includes('--dev')
 
@@ -36,6 +37,8 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+registerSoundCloud()
 
 // ---------------------------------------------------------------------------
 // IPC surface (see electron/preload.ts for the renderer-facing shape)

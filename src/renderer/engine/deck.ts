@@ -20,6 +20,12 @@ export interface Track {
   path: string
   durationSec: number
   sampleRate: number
+  /** 'soundcloud' for streamed tracks; absent for local files */
+  source?: string
+  /** attribution link back to the streaming service */
+  sourceUrl?: string
+  /** false when the source's terms forbid stem separation (SoundCloud's do) */
+  stemsAllowed?: boolean
   grid?: BeatGrid
   key?: string
   camelot?: string

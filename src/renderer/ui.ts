@@ -28,6 +28,10 @@ export interface AppRefs {
   crateCount: HTMLElement
   midiDevices: HTMLElement
   midiActions: HTMLElement
+  streamStatus: HTMLElement
+  scConnect: HTMLButtonElement
+  scQuery: HTMLInputElement
+  streamResults: HTMLUListElement
   log: HTMLElement
   addBtn: HTMLButtonElement
 }
@@ -130,6 +134,12 @@ export function buildApp(root: HTMLElement): AppRefs {
       <div class="panel-title">CRATE <span class="crate-count"></span></div>
       <ul class="crate-list"></ul>
     </section>
+    <section class="stream-panel">
+      <div class="panel-title">STREAM <span class="stream-status"></span></div>
+      <div class="stream-controls"><button class="sc-connect">connect SoundCloud</button></div>
+      <div class="stream-search"><input class="sc-q" type="text" placeholder="search SoundCloud… ⏎" /></div>
+      <ul class="stream-results"></ul>
+    </section>
     <section class="midi-panel">
       <div class="panel-title">MIDI <span class="midi-devices"></span></div>
       <div class="midi-actions"></div>
@@ -150,6 +160,10 @@ export function buildApp(root: HTMLElement): AppRefs {
     crateCount: footer.querySelector('.crate-count') as HTMLElement,
     midiDevices: footer.querySelector('.midi-devices') as HTMLElement,
     midiActions: footer.querySelector('.midi-actions') as HTMLElement,
+    streamStatus: footer.querySelector('.stream-status') as HTMLElement,
+    scConnect: footer.querySelector('.sc-connect') as HTMLButtonElement,
+    scQuery: footer.querySelector('.sc-q') as HTMLInputElement,
+    streamResults: footer.querySelector('.stream-results') as HTMLUListElement,
     log: footer.querySelector('.log-lines') as HTMLElement,
     addBtn
   }

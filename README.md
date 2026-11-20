@@ -29,8 +29,11 @@ Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI
   controller. Bindings persist. Absolute CCs can drive the crossfader.
 - **Crate**: tracks, BPM, key, cue points, hot cues and stem status persist in
   `~/Library/Application Support/vibedeck/crate.json`.
-- **Streaming-ready**: provider seam for plugging in SoundCloud/TIDAL — see
-  [docs/streaming.md](docs/streaming.md) for the researched reality of each service.
+- **Streaming-ready**: SoundCloud integration built in — OAuth 2.1 + PKCE login, search,
+  streaming, decode to in-memory AudioBuffer, beatgrid + sync + waveform + cues all work on
+  streamed tracks. Stems are intentionally disabled on streamed content (their API terms
+  forbid it — the code enforces `stemsAllowed: false`). Setup:
+  [docs/streaming.md](docs/streaming.md).
 
 ## Quickstart
 
@@ -98,7 +101,7 @@ Design notes:
 
 ## Roadmap
 
-- [ ] SoundCloud provider (OAuth 2.1 + PKCE, HLS → PCM, session-only cache, stems gated off)
+- [x] SoundCloud provider (OAuth 2.1 + PKCE, progressive stream → PCM, session-only cache, stems gated off)
 - [ ] TIDAL catalog enrichment (BPM/key backfill for the crate)
 - [ ] Beatgrid editing (tap tempo, nudge offset, half/double buttons)
 - [ ] Loop rolls (beat-loop 1/2/4/8 with worklet-friendly seek logic)

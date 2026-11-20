@@ -5,6 +5,25 @@ full-track, DRM-free audio into the DJ engine. Spotify and YouTube Music are har
 audio. TIDAL is a great metadata source but streams only 30s previews for third parties.**
 Beatport/Beatsource LINK exist precisely for DJ apps but require a commercial partnership.
 
+**The SoundCloud provider is implemented** — see "Setup" below.
+
+## "But Serato gives me stems from SoundCloud streams?"
+
+Probably yes — and the difference is the contract, not the tech:
+
+- **Serato** integrates SoundCloud through an official **DJ-program licensing partnership**
+  (requires listeners to hold SoundCloud Go+; streams arrive as 256k AAC; Serato analyzes
+  BPM/key on load and runs its realtime stems). Partner agreements explicitly license
+  DJ-grade processing of the audio, stems included.
+- **vibedeck** uses the **public API** (Artist Pro keys). The public API Terms of Use
+  explicitly forbid feeding API content to stem separation. Same catalog, different front
+  door, stricter rules. That's why streamed tracks in vibedeck get beatgrids, sync, waveforms
+  and cue points (all fine) but the stem pipeline stays off — enforced in code via
+  `stemsAllowed: false`.
+
+If vibedeck ever grows into something distributed, the path to "Serato-style stems on
+SoundCloud" is a partnership conversation with SoundCloud, not a technical one.
+
 ## The matrix
 
 | Service | OAuth app? | Full-track audio for us? | Why |
@@ -47,18 +66,23 @@ From the API Terms of Use:
 4. They can revoke any app they judge "unacceptable." A personal-use DJ tool is low-risk, but
    don't ship it publicly without talking to them.
 
-### Integration sketch
+### Integration — implemented
 
-- Provider class (see `src/renderer/sources/provider.ts`) with `search()` + `resolveStream()`.
-- OAuth loop: Electron shell opens `secure.soundcloud.com/authorize` in a hidden BrowserWindow
-  with PKCE, intercepts the redirect to a registered `vibedeck://oauth` handler, exchanges the
-  code (needs a tiny local helper or the main process since the client secret shouldn't live
-  in the renderer — note: SC treats all clients as confidential, secret required).
-- Fetch HLS playlist → fetch segments → decode → concatenate into an `AudioBuffer` (in-memory,
-  session cache keyed by track URN). From there the deck treats it like any buffer:
-  browser beatgrid runs, sync works, waveform works. Stems blocked by terms.
-- Expected stream quality: ~128k AAC (HLS) — fine for beatmatching, noticeably worse on a
-  big rig. Worth a UI badge ("streaming · 128k").
+1. Register an app at `soundcloud.com/you/apps` (needs Artist Pro). Set the redirect URI to
+   `http://localhost:8931/callback` exactly.
+2. Copy `soundcloud.config.example.json` → `soundcloud.config.json` in the repo root
+   (gitignored) and fill in your `clientId` / `clientSecret`.
+3. In vibedeck: STREAM panel → **connect SoundCloud** → browser opens → authorize → back in
+   the app. Tokens are stored encrypted (Keychain via Electron safeStorage) and auto-refresh.
+4. Search, click a result. The track streams (progressive MP3), decodes to an in-memory
+   AudioBuffer, gets a browser beatgrid, and loads onto a deck. Crate entries carry an `SC`
+   badge and a hover link back to the track (attribution).
+
+Implementation notes: OAuth 2.1 + PKCE with the secret living only in the main process;
+all API/media fetches proxied through IPC (no CORS, no secrets in the renderer); decoded
+audio is cached in memory for the session only (no files — terms); HLS-only tracks are
+declined with a clear message (segment-decode would click); tracks stream as ~128k MP3 via
+the public API (partner apps get 256k AAC — another partnership perk).
 
 ## TIDAL — the metadata power-up
 

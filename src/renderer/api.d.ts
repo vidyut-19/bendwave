@@ -12,6 +12,11 @@ declare global {
       p: string,
       opts?: { stems?: boolean; stemsDir?: string; python?: string }
     ): Promise<{ ok: boolean; result?: unknown; error?: string }>
+    scStatus(): Promise<{ configured: boolean; loggedIn: boolean; username?: string }>
+    scLogin(): Promise<{ ok: boolean; error?: string; username?: string }>
+    scLogout(): Promise<{ ok: boolean }>
+    scGet(p: string, params?: Record<string, string>): Promise<{ ok: boolean; data?: unknown; error?: string }>
+    scFetchBinary(url: string): Promise<{ ok: boolean; data?: Uint8Array; error?: string }>
   }
 
   interface Window {

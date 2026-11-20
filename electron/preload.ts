@@ -12,5 +12,13 @@ contextBridge.exposeInMainWorld('vibedeck', {
       ok: boolean
       result?: unknown
       error?: string
-    }>
+    }>,
+  scStatus: () =>
+    ipcRenderer.invoke('sc:status') as Promise<{ configured: boolean; loggedIn: boolean; username?: string }>,
+  scLogin: () => ipcRenderer.invoke('sc:login') as Promise<{ ok: boolean; error?: string; username?: string }>,
+  scLogout: () => ipcRenderer.invoke('sc:logout') as Promise<{ ok: boolean }>,
+  scGet: (p: string, params?: Record<string, string>) =>
+    ipcRenderer.invoke('sc:get', p, params) as Promise<{ ok: boolean; data?: unknown; error?: string }>,
+  scFetchBinary: (url: string) =>
+    ipcRenderer.invoke('sc:fetchBinary', url) as Promise<{ ok: boolean; data?: Uint8Array; error?: string }>
 })

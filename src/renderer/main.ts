@@ -7,6 +7,8 @@ import { STEM_ORDER, type Deck, type Track } from './engine/deck'
 import { CrateStore } from './crate/store'
 import { MidiRouter } from './midi/midi'
 import { buildApp, type AppRefs, type DeckRefs } from './ui'
+import { SoundCloudProvider } from './sources/soundcloud'
+import { registerProvider, type StreamTrackRef } from './sources/provider'
 
 const AUDIO_EXT = /\.(wav|aiff?|flac|mp3|m4a|aac|ogg)$/i
 
@@ -15,6 +17,9 @@ const crate = new CrateStore()
 const midi = new MidiRouter()
 const syncCtl = new SyncController(engine)
 const refs = buildApp(document.getElementById('app')!)
+
+const sc = new SoundCloudProvider(engine.ctx)
+registerProvider(sc)
 
 const waveforms = new Map<string, WaveformView>()
 
@@ -122,6 +127,8 @@ async function ingest(path: string, name: string, buffer: AudioBuffer): Promise<
 async function enhanceWithSidecar(track: Track): Promise<void> {
   const api = window.vibedeck
   if (!api) return
+  // streaming tracks have no local file, and their terms may forbid stem separation
+  if (track.source || track.stemsAllowed === false) return
   if (!userDataDir) {
     try {
       userDataDir = (await api.paths()).userData
@@ -189,6 +196,17 @@ async function attachStems(deck: Deck, track: Track): Promise<void> {
 // deck loading
 // ---------------------------------------------------------------------------
 
+function refFromTrack(t: Track): StreamTrackRef {
+  return {
+    provider: 'soundcloud',
+    id: t.path,
+    title: t.name,
+    durationSec: t.durationSec,
+    sourceUrl: t.sourceUrl,
+    stemsAllowed: false
+  }
+}
+
 async function loadTrackIntoDeck(track: Track, buffer?: AudioBuffer): Promise<void> {
   const deck = !engine.deckA.hasAudio
     ? engine.deckA
@@ -199,7 +217,16 @@ async function loadTrackIntoDeck(track: Track, buffer?: AudioBuffer): Promise<vo
         : engine.deckA
   releaseSyncIfSlave(deck)
   try {
-    const buf = buffer ?? (await decodePath(track.path))
+    let buf = buffer
+    if (!buf) {
+      if (track.source === 'soundcloud') {
+        const r = await sc.resolve(refFromTrack(track))
+        if (r.kind !== 'buffer') throw new Error('url streams not supported')
+        buf = r.buffer
+      } else {
+        buf = await decodePath(track.path)
+      }
+    }
     const stemBufs = track.stems ? await loadStemBuffers(track) : []
     await deck.load(track, buf, stemBufs)
     focusedDeck = deck.id
@@ -506,6 +533,7 @@ function renderCrate(): void {
   for (const t of tracks) {
     const li = document.createElement('li')
     const meta = [
+      t.source === 'soundcloud' ? 'SC' : '',
       t.grid?.bpm ? t.grid.bpm.toFixed(1) : '?',
       t.camelot ?? '',
       t.stems ? 'stems' : '',
@@ -514,6 +542,7 @@ function renderCrate(): void {
       .filter(Boolean)
       .join(' · ')
     li.innerHTML = `<span class="crate-name">${escapeHtml(t.name)}</span><span class="crate-meta">${escapeHtml(meta)}</span>`
+    if (t.sourceUrl) li.title = t.sourceUrl
     li.addEventListener('click', () => void loadTrackIntoDeck(t))
     refs.crateList.append(li)
   }
@@ -614,6 +643,105 @@ midi.onAction = (actionId, msg) => {
 }
 
 // ---------------------------------------------------------------------------
+// SoundCloud stream panel
+// ---------------------------------------------------------------------------
+
+function updateStreamPanel(): void {
+  if (!sc.configured) {
+    refs.streamStatus.textContent = 'not configured'
+    refs.scConnect.textContent = 'setup…'
+    refs.scConnect.disabled = true
+    return
+  }
+  refs.scConnect.disabled = false
+  if (sc.loggedIn) {
+    refs.streamStatus.textContent = sc.username ? `@${sc.username}` : 'connected'
+    refs.scConnect.textContent = 'disconnect'
+  } else {
+    refs.streamStatus.textContent = 'not connected'
+    refs.scConnect.textContent = 'connect SoundCloud'
+  }
+}
+
+refs.scConnect.addEventListener('click', async () => {
+  if (!sc.configured) {
+    log('soundcloud: copy soundcloud.config.example.json → soundcloud.config.json with your app credentials (docs/streaming.md)')
+    return
+  }
+  if (sc.loggedIn) {
+    await sc.logout()
+    log('soundcloud disconnected')
+  } else {
+    log('soundcloud: opening browser for OAuth sign-in…')
+    const r = await sc.login()
+    if (r.ok) log(`soundcloud connected${r.username ? ` as @${r.username}` : ''}`)
+    else log(`soundcloud login failed: ${r.error ?? 'unknown error'}`)
+  }
+  updateStreamPanel()
+})
+
+refs.scQuery.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return
+  e.preventDefault()
+  const q = refs.scQuery.value.trim()
+  if (!q) return
+  if (!sc.loggedIn) {
+    log('soundcloud: connect first (STREAM panel → connect SoundCloud)')
+    return
+  }
+  void (async () => {
+    try {
+      const results = await sc.search(q)
+      renderStreamResults(results)
+      log(`soundcloud: ${results.length} results for "${q}"`)
+    } catch (err) {
+      log(`soundcloud search failed: ${String(err)}`)
+    }
+  })()
+})
+
+function renderStreamResults(refsList: StreamTrackRef[]): void {
+  refs.streamResults.innerHTML = ''
+  for (const ref of refsList) {
+    const li = document.createElement('li')
+    const dur = ref.durationSec ? fmtTime(ref.durationSec) : '–:––'
+    const label = ref.artist ? `${ref.title} — ${ref.artist}` : ref.title
+    li.innerHTML = `<span class="crate-name">${escapeHtml(label)}</span><span class="crate-meta">${escapeHtml(dur)}</span>`
+    if (ref.sourceUrl) li.title = ref.sourceUrl
+    li.addEventListener('click', () => void addStreamTrack(ref))
+    refs.streamResults.append(li)
+  }
+}
+
+async function addStreamTrack(ref: StreamTrackRef): Promise<void> {
+  try {
+    log(`soundcloud: streaming "${ref.title}"…`)
+    const r = await sc.resolve(ref)
+    if (r.kind !== 'buffer') throw new Error('url streams not supported')
+    const buffer = r.buffer
+    const track: Track = {
+      id: `soundcloud:${ref.id}`,
+      name: ref.artist ? `${ref.title} — ${ref.artist}` : ref.title,
+      path: ref.id,
+      durationSec: buffer.duration,
+      sampleRate: buffer.sampleRate,
+      source: 'soundcloud',
+      sourceUrl: ref.sourceUrl,
+      stemsAllowed: false,
+      analyzedAt: new Date().toISOString(),
+      analysisSource: 'browser'
+    }
+    track.grid = computeBeatGrid(buffer)
+    crate.upsert(track)
+    renderCrate()
+    await loadTrackIntoDeck(track, buffer)
+    log(`added "${track.name}" (SoundCloud · beatgrid ${track.grid.bpm || '?'} BPM · stems off per ToS)`)
+  } catch (e) {
+    log(`soundcloud: ${String(e)}`)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // boot
 // ---------------------------------------------------------------------------
 
@@ -628,6 +756,13 @@ void (async () => {
       log(`deck ${deck.id} key lock unavailable (${m}) — playing without it`)
   }
   renderMidiPanel()
+  await sc.refreshStatus()
+  updateStreamPanel()
+  if (sc.configured && !sc.loggedIn) {
+    log('soundcloud configured — click "connect SoundCloud" in the STREAM panel')
+  } else if (!sc.configured) {
+    log('soundcloud: set up soundcloud.config.json to enable streaming (docs/streaming.md)')
+  }
   const midiOk = await midi.init()
   renderMidiPanel()
   log(
