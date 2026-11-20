@@ -17,10 +17,15 @@ Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI
 - **Key lock (experimental)**: WSOLA time-stretcher in an AudioWorklet — change tempo,
   keep pitch. Full-mix decks only (not with stems); ~70ms lookahead; honest at small
   pitch ranges, warbly at extremes.
+- **Loops & loop rolls**: 1/2/4/8-beat loops quantized to the beatgrid. Default mode is
+  momentary rolls (hold the pad, the loop plays while the virtual position keeps advancing —
+  release and you land where the track would have been, the classic roll transition).
+  LATCH mode turns the pads into toggling auto-loops. Active loops render as a shaded region
+  on the waveform. Works with stems; with key lock the worklet loops internally.
 - **FX rack per deck**: DJ filter (LP/HP combo knob, double-click to reset), beat-synced
   delay with wet/feedback controls and switchable fraction (1/4, 1/2, 3/4, 1/1), reverb,
   and a momentary **echo out** (`G`/`H` — hold for the transition, release to let it ring).
-- **Channel volume faders** per deck (post-FX, pre-crossfader).
+- **Channel volume faders + input trim** per deck (post-FX volume, pre-EQ ±12dB trim).
 - **Split-cue headphone monitoring**: per-deck CUE buttons + SPLIT CUE mode routes master
   on channels 1/2 and the cue bus on 3/4 — pair with a macOS Aggregate Device
   (speakers + headphones) to pre-listen like a real mixer.
@@ -74,7 +79,8 @@ Without these, vibedeck still works: browser-side BPM estimation covers beatmatc
 | `Shift` + hotcue key | Set that hot cue | | `,` / `.` | Crossfader left/right |
 | `G` / `H` | Deck A/B echo out (hold) | | `Space` | Crossfader center |
 | `Z` / `/` | Deck A/B headphone cue | | `X` | Split cue on/off |
-| wheel on waveform | zoom in/out | | dblclick filter | reset filter |
+| `4`–`7` | Deck A loop rolls 1/2/4/8 | | `B` `N` `M` `'` | Deck B loop rolls 1/2/4/8 |
+| `T` / `Y` | Deck A/B loop latch mode | | wheel on waveform | zoom in/out |
 
 ## Architecture
 

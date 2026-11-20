@@ -65,6 +65,15 @@ export class KeylockNode {
     this.node.port.postMessage({ type: 'rate', rate })
   }
 
+  /** Loop inside the worklet (OLА smooths the loop point). */
+  setLoop(startSec: number, lenSec: number): void {
+    this.node.port.postMessage({ type: 'loop', start: startSec, len: lenSec })
+  }
+
+  clearLoop(): void {
+    this.node.port.postMessage({ type: 'loop', start: null })
+  }
+
   dispose(): void {
     try {
       this.node.port.postMessage({ type: 'stop' })

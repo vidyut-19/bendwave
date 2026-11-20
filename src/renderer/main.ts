@@ -283,6 +283,18 @@ function actionPress(action: string): void {
       return
     }
 
+    const lp = /^loop([1248])$/.exec(verb)
+    if (lp) {
+      const beats = Number(lp[1])
+      if (deck.loopLatch) deck.toggleLoop(beats)
+      else deck.loopBeats(beats)
+      if (deck.activeLoop && syncCtl.slave === deck.id) {
+        syncCtl.disengage()
+        log(`deck ${deck.id} sync lock released (loop)`)
+      }
+      return
+    }
+
     switch (verb) {
       case 'play':
         if (deck.playing) deck.pause()
@@ -333,6 +345,13 @@ function actionPress(action: string): void {
       case 'cueMix':
         engine.setCueMix(deck.id, !engine.isCueMix(deck.id))
         break
+      case 'loopLatch':
+        deck.loopLatch = !deck.loopLatch
+        log(`deck ${deck.id} loops: ${deck.loopLatch ? 'latching' : 'momentary rolls'}`)
+        break
+      case 'loopExit':
+        deck.exitLoop()
+        break
       case 'bendDown':
         releaseSyncIfSlave(deck)
         deck.bend(-0.06)
@@ -373,6 +392,7 @@ function actionRelease(action: string): void {
     if (verb === 'cue') deck.cueRelease()
     else if (verb === 'bendDown' || verb === 'bendUp') deck.bend(0)
     else if (verb === 'echoOut') deck.fx.echoOutRelease()
+    else if (/^loop[1248]$/.test(verb)) deck.releaseLoop()
     return
   }
 }
@@ -399,7 +419,17 @@ const KEY_ACTIONS: Record<string, string> = {
   KeyH: 'deckB.echoOut',
   KeyZ: 'deckA.cueMix',
   Slash: 'deckB.cueMix',
-  KeyX: 'mix.splitCue'
+  KeyX: 'mix.splitCue',
+  Digit4: 'deckA.loop1',
+  Digit5: 'deckA.loop2',
+  Digit6: 'deckA.loop4',
+  Digit7: 'deckA.loop8',
+  KeyB: 'deckB.loop1',
+  KeyN: 'deckB.loop2',
+  KeyM: 'deckB.loop4',
+  Quote: 'deckB.loop8',
+  KeyT: 'deckA.loopLatch',
+  KeyY: 'deckB.loopLatch'
 }
 
 const HOTCUE_KEYS: Record<string, ['A' | 'B', number]> = {
@@ -534,6 +564,7 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   r.wet.oninput = () => deck.fx.setWet(r.wet.valueAsNumber)
   r.fb.oninput = () => deck.fx.setFb(r.fb.valueAsNumber)
   r.vol.oninput = () => deck.setVolume(r.vol.valueAsNumber)
+  r.trim.oninput = () => deck.setTrim(r.trim.valueAsNumber)
 
   r.hotcueBtns.forEach((btn, i) => {
     btn.addEventListener('pointerdown', (e) => {
@@ -618,6 +649,12 @@ function tick(): void {
     r.echoBtn.classList.toggle('active', deck.fx.echoActive)
     r.cueMixBtn.classList.toggle('active', engine.isCueMix(deck.id))
     r.fracBtn.textContent = delayFracLabel(deck.fx.delayFrac)
+    r.loopLatchBtn.classList.toggle('active', deck.loopLatch)
+    const LOOP_SIZES = [1, 2, 4, 8]
+    for (let i = 0; i < r.loopBtns.length; i++) {
+      r.loopBtns[i].classList.toggle('active', !!deck.activeLoop && deck.activeLoop.beats === LOOP_SIZES[i])
+    }
+    deck.updateLoop()
     if (updateFxBpm && (deck.fx.delayOn || deck.fx.echoActive)) {
       deck.fx.setBpm(deck.effectiveBpm ?? deck.track?.grid?.bpm ?? 0)
     }
@@ -652,13 +689,15 @@ const ACTION_IDS = [
   'deckA.hotcue1', 'deckA.hotcue2', 'deckA.hotcue3', 'deckA.hotcue4',
   'deckA.setHotcue1', 'deckA.setHotcue2', 'deckA.setHotcue3', 'deckA.setHotcue4',
   'deckA.delay', 'deckA.delayFrac', 'deckA.reverb', 'deckA.echoOut',
-  'deckA.filter', 'deckA.volume', 'deckA.delayWet', 'deckA.delayFb',
+  'deckA.filter', 'deckA.volume', 'deckA.delayWet', 'deckA.delayFb', 'deckA.trim',
+  'deckA.loop1', 'deckA.loop2', 'deckA.loop4', 'deckA.loop8', 'deckA.loopLatch', 'deckA.loopExit',
   'deckB.play', 'deckB.cue', 'deckB.setCue', 'deckB.sync', 'deckB.keylock',
   'deckB.bendDown', 'deckB.bendUp', 'deckB.cueMix',
   'deckB.hotcue1', 'deckB.hotcue2', 'deckB.hotcue3', 'deckB.hotcue4',
   'deckB.setHotcue1', 'deckB.setHotcue2', 'deckB.setHotcue3', 'deckB.setHotcue4',
   'deckB.delay', 'deckB.delayFrac', 'deckB.reverb', 'deckB.echoOut',
-  'deckB.filter', 'deckB.volume', 'deckB.delayWet', 'deckB.delayFb',
+  'deckB.filter', 'deckB.volume', 'deckB.delayWet', 'deckB.delayFb', 'deckB.trim',
+  'deckB.loop1', 'deckB.loop2', 'deckB.loop4', 'deckB.loop8', 'deckB.loopLatch', 'deckB.loopExit',
   'mix.crossLeft', 'mix.crossRight', 'mix.crossCenter', 'mix.crossfade', 'mix.splitCue'
 ]
 
@@ -713,6 +752,10 @@ midi.onAction = (actionId, msg) => {
         deck.fx.setFb((msg.value / 127) * 0.9)
         return
       }
+      if (actionId.endsWith('.trim')) {
+        deck.setTrim((msg.value / 127) * 24 - 12)
+        return
+      }
     }
   }
   // press/release actions
@@ -736,16 +779,20 @@ const KO2_PAD_ACTIONS: [number, string][] = [
   [36, 'deckA.play'], [37, 'deckA.cue'], [38, 'deckA.setCue'], [39, 'deckA.sync'],
   [40, 'deckA.hotcue1'], [41, 'deckA.hotcue2'], [42, 'deckA.hotcue3'], [43, 'deckA.hotcue4'],
   [44, 'deckA.echoOut'], [45, 'deckA.delay'], [46, 'deckA.delayFrac'], [47, 'deckA.reverb'],
-  // group B — deck A setters + toggles
+  // group B — deck A setters + loops
   [48, 'deckA.setHotcue1'], [49, 'deckA.setHotcue2'], [50, 'deckA.setHotcue3'], [51, 'deckA.setHotcue4'],
   [52, 'deckA.cueMix'], [53, 'deckA.keylock'],
+  [54, 'deckA.loop1'], [55, 'deckA.loop2'], [56, 'deckA.loop4'], [57, 'deckA.loop8'],
+  [58, 'deckA.loopExit'], [59, 'deckA.loopLatch'],
   // group C — deck B
   [60, 'deckB.play'], [61, 'deckB.cue'], [62, 'deckB.setCue'], [63, 'deckB.sync'],
   [64, 'deckB.hotcue1'], [65, 'deckB.hotcue2'], [66, 'deckB.hotcue3'], [67, 'deckB.hotcue4'],
   [68, 'deckB.echoOut'], [69, 'deckB.delay'], [70, 'deckB.delayFrac'], [71, 'deckB.reverb'],
-  // group D — deck B setters + toggles
+  // group D — deck B setters + loops
   [72, 'deckB.setHotcue1'], [73, 'deckB.setHotcue2'], [74, 'deckB.setHotcue3'], [75, 'deckB.setHotcue4'],
-  [76, 'deckB.cueMix'], [77, 'deckB.keylock']
+  [76, 'deckB.cueMix'], [77, 'deckB.keylock'],
+  [78, 'deckB.loop1'], [79, 'deckB.loop2'], [80, 'deckB.loop4'], [81, 'deckB.loop8'],
+  [82, 'deckB.loopExit'], [83, 'deckB.loopLatch']
 ]
 
 function ko2Preset(): Record<string, MidiBinding> {
@@ -763,10 +810,12 @@ const WIZARD_ACTIONS = [
   'deckA.play', 'deckA.cue', 'deckA.sync',
   'deckA.hotcue1', 'deckA.hotcue2', 'deckA.hotcue3', 'deckA.hotcue4',
   'deckA.echoOut', 'deckA.delay', 'deckA.delayFrac', 'deckA.reverb',
+  'deckA.loop1', 'deckA.loop2', 'deckA.loop4', 'deckA.loop8',
   'deckA.cueMix', 'deckA.filter', 'deckA.volume',
   'deckB.play', 'deckB.cue', 'deckB.sync',
   'deckB.hotcue1', 'deckB.hotcue2', 'deckB.hotcue3', 'deckB.hotcue4',
   'deckB.echoOut', 'deckB.delay', 'deckB.delayFrac', 'deckB.reverb',
+  'deckB.loop1', 'deckB.loop2', 'deckB.loop4', 'deckB.loop8',
   'deckB.cueMix', 'deckB.filter', 'deckB.volume',
   'mix.crossfade'
 ]

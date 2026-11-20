@@ -29,22 +29,26 @@ vibedeck's preset binds channel 1).
 | A9 | 46 | deck A delay fraction (1/4→1/2→3/4→1/1) |
 | A10 | 47 | deck A reverb on/off |
 
-### Group B — deck A setters (notes 48–59)
+### Group B — deck A setters + loops (notes 48–59)
 
 | Pad | Note | Action |
 |---|---|---|
 | B0–B3 | 48–51 | set deck A hot cues 1–4 |
 | B4 | 52 | deck A headphone cue |
 | B5 | 53 | deck A key lock |
+| B6–B9 | 54–57 | deck A loop rolls 1/2/4/8 (hold) |
+| B10 | 58 | deck A loop exit |
+| B11 | 59 | deck A loop latch mode |
 
 ### Group C — deck B (notes 60–71)
 
 Same layout as group A, one octave up, mapped to deck B (play 60, cue 61, set cue 62,
 sync 63, hot cues 64–67, echo 68, delay 69, fraction 70, reverb 71).
 
-### Group D — deck B setters (notes 72–83)
+### Group D — deck B setters + loops (notes 72–83)
 
-Set hot cues 1–4 (72–75), headphone cue (76), key lock (77).
+Set hot cues 1–4 (72–75), headphone cue (76), key lock (77), loop rolls 1/2/4/8 (78–81),
+loop exit (82), loop latch (83).
 
 ## Faders and knobs
 

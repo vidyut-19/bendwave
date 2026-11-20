@@ -22,6 +22,7 @@ class KeylockProcessor extends AudioWorkletProcessor {
     this.len = 0
     this.rate = 1
     this.playing = false
+    this.loop = null // { start, len } in samples
     this.fifo = null // per-channel output ring buffer
     this.fifoLen = GRAIN * 4
     this.fifoRead = 0
@@ -65,6 +66,13 @@ class KeylockProcessor extends AudioWorkletProcessor {
         break
       case 'rate':
         this.rate = m.rate
+        break
+      case 'loop':
+        if (m.start == null) {
+          this.loop = null
+        } else {
+          this.loop = { start: m.start * sampleRate, len: m.len * sampleRate }
+        }
         break
     }
   }
@@ -140,7 +148,14 @@ class KeylockProcessor extends AudioWorkletProcessor {
     }
 
     // keep the fifo topped up (~one grain of lookahead = ~70ms latency)
-    while (this.fifoFill < GRAIN + 512 && this.readPos < this.len) this.produceGrain()
+    while (this.fifoFill < GRAIN + 512 && (this.readPos < this.len || this.loop)) {
+      if (this.loop) {
+        const end = this.loop.start + this.loop.len
+        while (this.readPos >= end) this.readPos -= this.loop.len
+        if (this.readPos < this.loop.start) this.readPos = this.loop.start
+      }
+      this.produceGrain()
+    }
 
     let playedAny = false
     for (let i = 0; i < n; i++) {
@@ -159,7 +174,7 @@ class KeylockProcessor extends AudioWorkletProcessor {
       this.outFrames++
     }
 
-    if (!playedAny && this.readPos >= this.len && !this.endedSent) {
+    if (!playedAny && this.readPos >= this.len && !this.loop && !this.endedSent) {
       this.endedSent = true
       this.playing = false
       this.port.postMessage({ type: 'ended' })

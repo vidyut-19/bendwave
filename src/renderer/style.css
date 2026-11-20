@@ -118,6 +118,12 @@ main {
 .t-btn.fx.cuemix.active { background: var(--good); border-color: var(--good); color: #08130b; }
 .t-btn.split-cue.active { background: var(--good); border-color: var(--good); color: #08130b; }
 
+.loop-row { gap: 6px; }
+.loop-lab { color: var(--dim); font-size: 11px; }
+.t-btn.loop { min-width: 30px; }
+.t-btn.loop.active { background: #a78bfa; border-color: #a78bfa; color: #14082a; }
+.t-btn.loop-latch.active { background: #f59e0b; border-color: #f59e0b; color: #1a1005; }
+
 .midi-tools { display: flex; gap: 6px; margin-bottom: 6px; }
 .midi-tools button { flex: 1; font-size: 11px; padding: 3px 4px; }
 .midi-wizard-status { color: var(--accent-b); font-size: 11px; margin-bottom: 6px; min-height: 1em; }

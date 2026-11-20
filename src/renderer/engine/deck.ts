@@ -74,6 +74,12 @@ export class Deck {
   cuePoint = 0
   hotCues: (number | null)[] = [null, null, null, null]
   track: Track | null = null
+  /** active loop: start/len in track seconds, beats kept for UI */
+  activeLoop: { start: number; len: number; beats: number } | null = null
+  /** when true, loop pads latch instead of momentary rolls */
+  loopLatch = false
+  private loopHeld = false
+  private loopNext: { sources: AudioBufferSourceNode[]; atTime: number } | null = null
 
   private preGain: GainNode
   private low: BiquadFilterNode
@@ -128,6 +134,19 @@ export class Deck {
     return this.startPos + (this.ctx.currentTime - this.startedAt) * this.effRate
   }
 
+  /**
+   * Where the listener actually is: inside the loop while one is engaged,
+   * otherwise the (virtual) position — which keeps advancing through loops so
+   * releasing a roll drops you where the track would have been.
+   */
+  get audiblePosition(): number {
+    if (!this.activeLoop) return this.position
+    const { start, len } = this.activeLoop
+    const rel = this.position - start
+    if (rel <= 0) return this.position
+    return start + (rel % len)
+  }
+
   get effectiveBpm(): number | undefined {
     return this.track?.grid ? this.track.grid.bpm * this.effRate : undefined
   }
@@ -152,6 +171,11 @@ export class Deck {
     this.output.gain.value = Math.min(1.2, Math.max(0, v))
   }
 
+  /** input trim, -12..+12 dB (pre-EQ) */
+  setTrim(db: number): void {
+    this.preGain.gain.value = Math.pow(10, Math.min(12, Math.max(-12, db)) / 20)
+  }
+
   async load(track: Track, buffer: AudioBuffer, stemBuffers: AudioBuffer[] = []): Promise<void> {
     this.stopSources()
     if (this.kl) {
@@ -171,6 +195,9 @@ export class Deck {
     this.startPos = 0
     this.tempoRate = 1
     this.bendDelta = 0
+    this.activeLoop = null
+    this.loopNext = null
+    this.loopHeld = false
   }
 
   /** Swaps stem layers; when non-empty, stems replace the full mix on playback. */
@@ -199,16 +226,18 @@ export class Deck {
     if (this.startPos >= this.duration - 0.05) this.startPos = 0
     this.playing = true
     this.startedAt = this.ctx.currentTime
+    const from = this.activeLoop ? this.audiblePosition : this.startPos
     if (this.useKeylock()) {
-      void this.startKeylock(this.startPos)
+      void this.startKeylock(from)
     } else {
-      this.startSources(this.startPos)
+      this.startSources(from)
     }
   }
 
   pause(): void {
     if (!this.playing) return
     const p = this.position
+    this.cancelLoopScheduling()
     this.stopSources()
     if (this.kl) this.kl.stop()
     this.playing = false
@@ -216,6 +245,7 @@ export class Deck {
   }
 
   seek(pos: number): void {
+    if (this.activeLoop) this.clearLoop(false)
     const p = Math.min(Math.max(pos, 0), Math.max(0, this.duration - 0.01))
     if (this.playing) {
       this.stopSources()
@@ -258,6 +288,9 @@ export class Deck {
       return
     }
     for (const s of this.sources) s.playbackRate.value = this.effRate
+    if (this.loopNext) {
+      for (const s of this.loopNext.sources) s.playbackRate.value = this.effRate
+    }
   }
 
   /** CDJ-style cue: press while playing stops and returns; press while stopped plays from cue; release returns. */
@@ -285,6 +318,137 @@ export class Deck {
   setCueHere(): void {
     this.cuePoint = Math.min(Math.max(this.position, 0), this.duration)
     if (this.track) this.track.cue = this.cuePoint
+  }
+
+  // -------------------------------------------------------------------------
+  // loops: momentary rolls by default, latching when loopLatch is on
+  // -------------------------------------------------------------------------
+
+  /** Engage a beat-quantized loop from the current position (quantized to the beatgrid). */
+  loopBeats(beats: number): void {
+    if (!this.hasAudio) return
+    const bpm = this.track?.grid?.bpm && this.track.grid.bpm > 0 ? this.track.grid.bpm : 120
+    const beat = 60 / bpm
+    const len = beats * beat
+    const grid = this.track?.grid
+    let start = this.position
+    if (grid && grid.bpm > 0) {
+      const k = Math.round((start - grid.offset) / beat)
+      start = Math.max(0, Math.min(Math.max(0, this.duration - len), grid.offset + k * beat))
+    }
+    this.activeLoop = { start, len, beats }
+    this.loopHeld = true
+    if (this.playing) {
+      if (this.useKeylock()) {
+        this.kl?.setLoop(start, len)
+      } else {
+        this.restartAt(this.audiblePosition)
+      }
+    }
+  }
+
+  /** Release a held roll — jumps forward to the virtual position. */
+  releaseLoop(): void {
+    this.loopHeld = false
+    if (this.activeLoop && !this.loopLatch) this.clearLoop(true)
+  }
+
+  /** Latch-mode pad press: same size toggles off, other sizes re-engage. */
+  toggleLoop(beats: number): void {
+    if (this.activeLoop && this.activeLoop.beats === beats) {
+      this.clearLoop(true)
+    } else {
+      this.loopBeats(beats)
+    }
+  }
+
+  exitLoop(): void {
+    this.clearLoop(true)
+  }
+
+  private clearLoop(restart: boolean): void {
+    this.activeLoop = null
+    this.loopHeld = false
+    this.cancelLoopScheduling()
+    this.kl?.clearLoop()
+    if (restart && this.playing) this.restartAt(this.position)
+  }
+
+  /**
+   * Keeps a playing loop seamless: schedules the next iteration's sources to
+   * start exactly when the current one hits the loop boundary. Called from the
+   * UI tick. The keylock worklet loops internally and skips this.
+   */
+  updateLoop(): void {
+    if (!this.playing || !this.activeLoop) return
+    if (this.useKeylock() && this.kl) return
+    if (!this.loopNext) {
+      this.scheduleLoopIteration()
+    } else if (this.ctx.currentTime >= this.loopNext.atTime) {
+      for (const s of this.sources) {
+        try {
+          s.disconnect()
+        } catch {
+          /* already gone */
+        }
+      }
+      this.sources = this.loopNext.sources
+      this.loopNext = null
+    }
+  }
+
+  private scheduleLoopIteration(): void {
+    if (!this.activeLoop) return
+    const { start, len } = this.activeLoop
+    const rate = this.effRate
+    if (rate <= 0) return
+    const k = Math.max(0, Math.ceil((this.position - start) / len - 1e-6))
+    const iterEndPos = start + k * len
+    const tEnd = this.startedAt + (iterEndPos - this.startPos) / rate
+    if (tEnd < this.ctx.currentTime + 0.004) {
+      // boundary is now — jump straight back to the loop start
+      this.stopSources()
+      this.startSources(this.audiblePosition)
+      return
+    }
+    for (const s of this.sources) {
+      try {
+        s.stop(tEnd)
+      } catch {
+        /* noop */
+      }
+    }
+    this.loopNext = { sources: this.createSources(tEnd, start), atTime: tEnd }
+  }
+
+  private restartAt(pos: number): void {
+    this.cancelLoopScheduling()
+    this.stopSources()
+    this.startPos = pos
+    this.startedAt = this.ctx.currentTime
+    if (this.useKeylock()) {
+      if (this.kl) this.kl.seek(pos)
+      else void this.startKeylock(pos)
+    } else {
+      this.startSources(pos)
+    }
+  }
+
+  private cancelLoopScheduling(): void {
+    if (!this.loopNext) return
+    for (const s of this.loopNext.sources) {
+      try {
+        s.stop()
+      } catch {
+        /* noop */
+      }
+      try {
+        s.disconnect()
+      } catch {
+        /* noop */
+      }
+    }
+    this.loopNext = null
   }
 
   /**
@@ -351,6 +515,7 @@ export class Deck {
           }
         }
       }
+      if (this.activeLoop) this.kl?.setLoop(this.activeLoop.start, this.activeLoop.len)
       if (this.playing && this.useKeylock()) this.kl?.play(pos, this.effRate)
     } catch (e) {
       this.keylock = false
@@ -361,7 +526,8 @@ export class Deck {
     }
   }
 
-  private startSources(from: number): void {
+  /** Builds a source set (or stem set) starting at `when` (ctx time) from track position `from`. */
+  private createSources(when: number, from: number): AudioBufferSourceNode[] {
     const rate = this.effRate
     const mk = (buf: AudioBuffer, dest: AudioNode): AudioBufferSourceNode => {
       const s = this.ctx.createBufferSource()
@@ -369,7 +535,7 @@ export class Deck {
       s.playbackRate.value = rate
       s.connect(dest)
       const off = Math.min(from, Math.max(0, buf.duration - 1e-4))
-      s.start(0, off)
+      s.start(when, off)
       return s
     }
     const list: AudioBufferSourceNode[] = []
@@ -378,7 +544,11 @@ export class Deck {
     } else if (this.buffer) {
       list.push(mk(this.buffer, this.preGain))
     }
-    this.sources = list
+    return list
+  }
+
+  private startSources(from: number): void {
+    this.sources = this.createSources(0, from)
   }
 
   private stopSources(): void {

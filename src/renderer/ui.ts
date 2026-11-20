@@ -26,6 +26,10 @@ export interface DeckRefs {
   reverbBtn: HTMLButtonElement
   echoBtn: HTMLButtonElement
   cueMixBtn: HTMLButtonElement
+  trim: HTMLInputElement
+  loopBtns: HTMLButtonElement[]
+  loopLatchBtn: HTMLButtonElement
+  loopExitBtn: HTMLButtonElement
 }
 
 export interface AppRefs {
@@ -76,6 +80,7 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
     <button class="t-btn fx echo" data-act="deck${id}.echoOut">ECHO</button>
   </div>
   <div class="row fx-params">
+    <label class="fx-lab">TRM <input class="trim" type="range" min="-12" max="12" step="0.5" value="0" title="input trim (dB)" /></label>
     <label class="fx-lab">WET <input class="wet" type="range" min="0" max="1" step="0.01" value="0.55" /></label>
     <label class="fx-lab">FB <input class="fb" type="range" min="0" max="0.9" step="0.01" value="0.5" /></label>
     <label class="fx-lab">VOL <input class="vol" type="range" min="0" max="1" step="0.01" value="1" /></label>
@@ -100,6 +105,15 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
     <button class="hc hc3" data-act="deck${id}.hotcue3">3</button>
     <button class="hc hc4" data-act="deck${id}.hotcue4">4</button>
     <span class="hc-hint">shift+click sets · alt+click clears</span>
+  </div>
+  <div class="row loop-row">
+    <span class="loop-lab">LOOP</span>
+    <button class="t-btn loop loop1" data-act="deck${id}.loop1" title="1-beat loop roll (hold)">1</button>
+    <button class="t-btn loop loop2" data-act="deck${id}.loop2" title="2-beat loop roll (hold)">2</button>
+    <button class="t-btn loop loop4" data-act="deck${id}.loop4" title="4-beat loop roll (hold)">4</button>
+    <button class="t-btn loop loop8" data-act="deck${id}.loop8" title="8-beat loop roll (hold)">8</button>
+    <button class="t-btn loop-latch" data-act="deck${id}.loopLatch" title="latching loops instead of momentary rolls">LATCH</button>
+    <button class="t-btn loop-exit" data-act="deck${id}.loopExit">EXIT</button>
   </div>
 `
 
@@ -132,11 +146,15 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
     wet: q('.wet'),
     fb: q('.fb'),
     vol: q('.vol'),
+    trim: q('.trim'),
     delayBtn: q('.delay'),
     fracBtn: q('.frac'),
     reverbBtn: q('.reverb'),
     echoBtn: q('.echo'),
-    cueMixBtn: q('.cuemix')
+    cueMixBtn: q('.cuemix'),
+    loopBtns: [1, 2, 4, 8].map((n) => q(`.loop${n}`)),
+    loopLatchBtn: q('.loop-latch'),
+    loopExitBtn: q('.loop-exit')
   }
 }
 

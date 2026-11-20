@@ -99,7 +99,7 @@ export class WaveformView {
       return
     }
 
-    const pos = deck.position
+    const pos = deck.audiblePosition
     const t0 = pos - this.zoomSec * PLAYHEAD_FRAC
     const t1 = t0 + this.zoomSec
     this.lastT0 = t0
@@ -148,6 +148,21 @@ export class WaveformView {
           g.stroke()
         }
         k++
+      }
+    }
+
+    // active loop region
+    if (deck.activeLoop) {
+      const lx0 = (deck.activeLoop.start - t0) / secPerPx
+      const lx1 = lx0 + deck.activeLoop.len / secPerPx
+      g.fillStyle = 'rgba(167,139,250,0.16)'
+      g.fillRect(lx0, 0, lx1 - lx0, h)
+      g.strokeStyle = 'rgba(167,139,250,0.85)'
+      for (const lx of [lx0, lx1]) {
+        g.beginPath()
+        g.moveTo(lx, 0)
+        g.lineTo(lx, h)
+        g.stroke()
       }
     }
 
