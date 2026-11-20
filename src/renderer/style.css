@@ -120,6 +120,13 @@ main {
 .t-btn.fx.cuemix.active { background: var(--good); border-color: var(--good); color: #08130b; }
 .t-btn.split-cue.active, .t-btn.auto-gain.active { background: var(--good); border-color: var(--good); color: #08130b; }
 
+.sampler-box { display: flex; flex-direction: column; gap: 6px; }
+.sampler-hint { color: var(--dim); font-size: 10px; }
+.sampler-pads { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.smp { padding: 7px 0; font-size: 11px; }
+.smp.loaded { background: #fb923c; border-color: #fb923c; color: #2a1200; }
+.sampler-box .row span { color: var(--dim); font-size: 11px; }
+
 .loop-row { gap: 6px; }
 .loop-lab { color: var(--dim); font-size: 11px; }
 .t-btn.loop { min-width: 30px; }

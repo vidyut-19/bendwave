@@ -39,6 +39,8 @@ export interface AppRefs {
   master: HTMLInputElement
   splitCueBtn: HTMLButtonElement
   autoGainBtn: HTMLButtonElement
+  samplerPads: HTMLButtonElement[]
+  samplerVol: HTMLInputElement
   memMeter: HTMLElement
   crateList: HTMLUListElement
   crateCount: HTMLElement
@@ -181,7 +183,14 @@ export function buildApp(root: HTMLElement): AppRefs {
     <button class="t-btn xf-center" data-act="mix.crossCenter">CENTER</button>
     <button class="t-btn split-cue" data-act="mix.splitCue" title="master on ch 1/2, headphone cue on ch 3/4 (use an aggregate audio device)">SPLIT CUE</button>
     <button class="t-btn auto-gain" data-act="mix.autoGain" title="normalize tracks to ${-14} LUFS via trim on load">AUTO GAIN</button>
-    <div class="row"><span>MASTER</span><input class="master" type="range" min="0" max="1" step="0.01" value="0.85" style="flex:1" /></div>`
+    <div class="row"><span>MASTER</span><input class="master" type="range" min="0" max="1" step="0.01" value="0.85" style="flex:1" /></div>
+    <div class="sampler-box">
+      <div class="panel-title">SAMPLER <span class="sampler-hint">drop on pads · alt+click clears</span></div>
+      <div class="sampler-pads">
+        ${[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `<button class="smp" data-act="sampler.pad${n}">${n}</button>`).join('\n        ')}
+      </div>
+      <div class="row"><span>SMP</span><input class="sampler-vol" type="range" min="0" max="1" step="0.01" value="0.9" style="flex:1" /></div>
+    </div>`
 
   main.append(deckA.root, mixer, deckB.root)
 
@@ -220,6 +229,8 @@ export function buildApp(root: HTMLElement): AppRefs {
     master: mixer.querySelector('.master') as HTMLInputElement,
     splitCueBtn: mixer.querySelector('.split-cue') as HTMLButtonElement,
     autoGainBtn: mixer.querySelector('.auto-gain') as HTMLButtonElement,
+    samplerPads: Array.from(mixer.querySelectorAll<HTMLButtonElement>('.smp')),
+    samplerVol: mixer.querySelector('.sampler-vol') as HTMLInputElement,
     memMeter: header.querySelector('.mem-meter') as HTMLElement,
     crateList: footer.querySelector('.crate-list') as HTMLUListElement,
     crateCount: footer.querySelector('.crate-count') as HTMLElement,

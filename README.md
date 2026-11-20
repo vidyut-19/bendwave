@@ -26,6 +26,10 @@ Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI
   delay with wet/feedback controls and switchable fraction (1/4, 1/2, 3/4, 1/1), reverb,
   and a momentary **echo out** (`G`/`H` — hold for the transition, release to let it ring).
 - **Channel volume faders + input trim** per deck (post-FX volume, pre-EQ ±12dB trim).
+- **One-shot sampler**: 8 slots in the mixer column — drop kicks/claps/tones onto the pads,
+  trigger with click, `Shift+1…8`, or velocity-sensitive MIDI pads (K.O. II). Retrigger
+  chokes the previous hit per slot, slots persist across restarts, dedicated SMP volume,
+  and the bus runs straight to master (crossfader-bypassed, SP-6 style).
 - **Auto-gain**: tracks are loudness-analyzed on load (gated block-RMS, LUFS-approximate)
   and the channel trim is set to normalize them to −14 LUFS, clamped to the ±12 dB trim
   range. Persisted per track in the crate. Toggle: AUTO GAIN button or `C`; moving TRM
@@ -91,7 +95,8 @@ Without these, vibedeck still works: browser-side BPM estimation covers beatmatc
 | `G` / `H` | Deck A/B echo out (hold) | | `Space` | Crossfader center |
 | `Z` / `/` | Deck A/B headphone cue | | `X` | Split cue on/off |
 | `4`–`7` | Deck A loop rolls 1/2/4/8 | | `B` `N` `M` `'` | Deck B loop rolls 1/2/4/8 |
-| `T` / `Y` | Deck A/B loop latch mode | | wheel on waveform | zoom in/out |
+| `T` / `Y` | Deck A/B loop latch mode | | `Shift`+`1`–`8` | Sampler pads |
+| wheel on waveform | zoom in/out | | dblclick filter | reset filter |
 
 ## Architecture
 

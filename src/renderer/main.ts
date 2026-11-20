@@ -12,6 +12,7 @@ import { registerProvider, type StreamTrackRef } from './sources/provider'
 import { delayFracLabel } from './engine/fx'
 import { AudioMemory } from './engine/memory'
 import { computeLoudness, autoGainDb, TARGET_LUFS } from './engine/analysis'
+import { Sampler } from './engine/sampler'
 import type { MidiBinding } from './midi/midi'
 
 const AUDIO_EXT = /\.(wav|aiff?|flac|mp3|m4a|aac|ogg)$/i
@@ -30,6 +31,10 @@ const audioMem = new AudioMemory()
 
 // auto-gain: normalize tracks to TARGET_LUFS via trim on deck load
 let autoGain = localStorage.getItem('vibedeck.autogain') !== 'off'
+
+// one-shot sampler (kicks/claps/tones) — straight to master, crossfader-bypassed
+const sampler = new Sampler(engine.ctx, engine.master)
+const SAMPLER_KEY = 'vibedeck.sampler.v1'
 
 const waveforms = new Map<string, WaveformView>()
 
@@ -293,6 +298,13 @@ function releaseSyncIfSlave(deck: Deck): void {
 
 function actionPress(action: string): void {
   engine.resume()
+
+  const sp = /^sampler\.pad([1-8])$/.exec(action)
+  if (sp) {
+    sampler.trigger(Number(sp[1]) - 1)
+    return
+  }
+
   const deck = deckOf(action)
   if (deck) {
     const verb = action.slice(6)
@@ -494,6 +506,12 @@ const HOTCUE_KEYS: Record<string, ['A' | 'B', number]> = {
 }
 
 document.addEventListener('keydown', (e) => {
+  if (e.shiftKey && /^Digit[1-8]$/.test(e.code)) {
+    e.preventDefault()
+    if (e.repeat) return
+    sampler.trigger(Number(e.code.slice(5)) - 1)
+    return
+  }
   const hc = HOTCUE_KEYS[e.code]
   if (hc) {
     e.preventDefault()
@@ -679,6 +697,87 @@ refs.master.addEventListener('input', () => {
   engine.master.gain.value = refs.master.valueAsNumber
 })
 
+// ---------------------------------------------------------------------------
+// sampler: pads, drag & drop, persistence
+// ---------------------------------------------------------------------------
+
+function updateSamplerUI(): void {
+  refs.samplerPads.forEach((pad, i) => {
+    const info = sampler.info(i)
+    pad.classList.toggle('loaded', !!info)
+    pad.title = info ? info.name : 'empty — drop an audio file here'
+  })
+}
+
+function persistSampler(): void {
+  const recs = Array.from({ length: sampler.count }, (_, i) => {
+    const info = sampler.info(i)
+    return info ? { name: info.name, path: info.path } : null
+  })
+  localStorage.setItem(SAMPLER_KEY, JSON.stringify(recs))
+}
+
+async function restoreSampler(): Promise<void> {
+  try {
+    const recs = JSON.parse(localStorage.getItem(SAMPLER_KEY) ?? '[]') as ({ name: string; path: string } | null)[]
+    let n = 0
+    for (let i = 0; i < sampler.count && i < recs.length; i++) {
+      const r = recs[i]
+      if (!r?.path) continue
+      try {
+        const b = await decodePath(r.path)
+        sampler.load(i, r.name, r.path, b)
+        n++
+      } catch {
+        /* file moved or deleted */
+      }
+    }
+    if (n > 0) log(`sampler: restored ${n} slot(s)`)
+  } catch {
+    /* corrupt config */
+  }
+  updateSamplerUI()
+}
+
+refs.samplerVol.addEventListener('input', () => sampler.setMaster(refs.samplerVol.valueAsNumber))
+
+refs.samplerPads.forEach((pad, i) => {
+  pad.addEventListener('pointerdown', (e) => {
+    if (e.altKey) {
+      sampler.clear(i)
+      persistSampler()
+      updateSamplerUI()
+      log(`sampler slot ${i + 1} cleared`)
+      return
+    }
+    actionPress(`sampler.pad${i + 1}`)
+  })
+  pad.addEventListener('dragover', (e) => e.preventDefault())
+  pad.addEventListener('drop', (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const f = e.dataTransfer?.files?.[0]
+    if (!f || !AUDIO_EXT.test(f.name)) {
+      log(`sampler: unsupported file (want wav/mp3/flac/aiff)`)
+      return
+    }
+    void (async () => {
+      try {
+        const buffer = await decodeFile(f)
+        const path = window.vibedeck?.filePathFor(f) ?? f.name
+        const name = f.name.replace(/\.[^.]+$/, '')
+        sampler.load(i, name, path, buffer)
+        persistSampler()
+        updateSamplerUI()
+        audioMem.track(`smp:${i + 1}`, `sample:${name}`, AudioMemory.bytesOf(buffer))
+        log(`sampler slot ${i + 1} ← "${name}"`)
+      } catch (err) {
+        log(`sampler: failed to load ${f.name}: ${String(err)}`)
+      }
+    })()
+  })
+})
+
 let lastSyncUpdate = 0
 let lastFxBpmUpdate = 0
 let lastMemUpdate = 0
@@ -769,6 +868,8 @@ const ACTION_IDS = [
   'deckB.delay', 'deckB.delayFrac', 'deckB.reverb', 'deckB.echoOut',
   'deckB.filter', 'deckB.volume', 'deckB.delayWet', 'deckB.delayFb', 'deckB.trim',
   'deckB.loop1', 'deckB.loop2', 'deckB.loop4', 'deckB.loop8', 'deckB.loopLatch', 'deckB.loopExit',
+  'sampler.pad1', 'sampler.pad2', 'sampler.pad3', 'sampler.pad4',
+  'sampler.pad5', 'sampler.pad6', 'sampler.pad7', 'sampler.pad8', 'sampler.volume',
   'mix.crossLeft', 'mix.crossRight', 'mix.crossCenter', 'mix.crossfade', 'mix.splitCue', 'mix.autoGain'
 ]
 
@@ -799,10 +900,21 @@ midi.onDevices = (names) => {
   refs.midiDevices.textContent = names.length ? names.join(', ') : 'no devices'
 }
 midi.onAction = (actionId, msg) => {
+  // sampler pads are velocity-sensitive
+  const sp = /^sampler\.pad([1-8])$/.exec(actionId)
+  if (sp) {
+    if (msg.type === 'note' && msg.value > 0) sampler.trigger(Number(sp[1]) - 1, msg.value / 127)
+    else if (msg.type === 'cc' && msg.value > 63) sampler.trigger(Number(sp[1]) - 1)
+    return
+  }
   // continuous (CC value) actions
   if (msg.type === 'cc') {
     if (actionId === 'mix.crossfade') {
       engine.mixer.setCrossfade(msg.value / 127)
+      return
+    }
+    if (actionId === 'sampler.volume') {
+      sampler.setMaster(msg.value / 127)
       return
     }
     const deck = deckOf(actionId)
@@ -1027,6 +1139,7 @@ void (async () => {
       log(`deck ${deck.id} key lock unavailable (${m}) — playing without it`)
   }
   renderMidiPanel()
+  await restoreSampler()
   await sc.refreshStatus()
   updateStreamPanel()
   if (sc.configured && !sc.loggedIn) {
