@@ -74,6 +74,9 @@ npm install
 npm run dev        # vite + electron with hot reload on the renderer
 ```
 
+Wiring up speakers/headphones (including a $0 split-cue rig using the K.O. II as your
+audio interface): [docs/hardware.md](docs/hardware.md).
+
 For the full ingestion pipeline (better BPM, key detection, stems):
 
 ```bash
