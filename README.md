@@ -4,14 +4,22 @@ A vibe-coded, stem-aware DJ tool. Two Web Audio decks, automatic beatgrids, temp
 auto-sync, keyboard control, and MIDI-learn for anything with pads and faders — built with a
 Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI controller.
 
-## What works today (v0.1)
+## What works today (v0.2)
 
 - **Two decks + mixer**: play/pause, CDJ-style cue (hold to preview, release to return),
   set-cue, pitch fader (±8%), pitch bend, 3-band EQ per deck, equal-power crossfader, master.
+- **Waveform + beatgrid**: scrolling zoomable waveform per deck with beat lines, downbeats,
+  cue and hot-cue markers. Click/drag to seek, wheel to zoom.
+- **Hot cues**: 4 per deck, per-track persistent, colored, shown on the waveform —
+  keyboard (`A S D F` / `J K L ;`, shift to set, alt-click to clear) or MIDI-learned pads.
+- **Sync with drift lock**: SYNC matches tempo + phase, then a soft PLL keeps the slave
+  locked to the master while both play. SYNC again (or any manual pitch/scrub) releases.
+- **Key lock (experimental)**: WSOLA time-stretcher in an AudioWorklet — change tempo,
+  keep pitch. Full-mix decks only (not with stems); ~70ms lookahead; honest at small
+  pitch ranges, warbly at extremes.
 - **Drop-and-play**: drag WAV/FLAC/MP3/AIFF/M4A anywhere, or use "add tracks…".
 - **Instant BPM**: an in-browser onset/autocorrelation beatgrid estimator runs the moment a
   track loads — no dependencies required.
-- **Auto-sync**: SYNC matches the other deck's effective BPM and phase-aligns the beatgrid.
 - **Stems (optional)**: with `demucs` + `librosa` installed, each new track is re-analyzed by
   the python sidecar: better BPM + offset, musical key (Camelot), and 4 separated stems
   (drums / bass / other / vocals). Stems load onto the deck as sample-aligned layers with
@@ -19,7 +27,10 @@ Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI
 - **Keyboard control** (see map below).
 - **MIDI learn**: click *learn* next to any action, then touch a pad/knob/fader on your
   controller. Bindings persist. Absolute CCs can drive the crossfader.
-- **Crate**: tracks, BPM, key, stem status persist in `~/Library/Application Support/vibedeck/crate.json`.
+- **Crate**: tracks, BPM, key, cue points, hot cues and stem status persist in
+  `~/Library/Application Support/vibedeck/crate.json`.
+- **Streaming-ready**: provider seam for plugging in SoundCloud/TIDAL — see
+  [docs/streaming.md](docs/streaming.md) for the researched reality of each service.
 
 ## Quickstart
 
@@ -44,9 +55,12 @@ Without these, vibedeck still works: browser-side BPM estimation covers beatmatc
 | `Q` | Deck A play/pause | | `P` | Deck B play/pause |
 | `W` | Deck A cue (hold) | | `O` | Deck B cue (hold) |
 | `E` | Deck A set cue | | `I` | Deck B set cue |
-| `R` | Deck A sync | | `U` | Deck B sync |
+| `R` | Deck A sync (toggle lock) | | `U` | Deck B sync (toggle lock) |
 | `1` / `2` | Deck A bend −/+ | | `9` / `0` | Deck B bend −/+ |
-| `,` / `.` | Crossfader left/right | | `Space` | Crossfader center |
+| `3` | Deck A key lock | | `8` | Deck B key lock |
+| `A` `S` `D` `F` | Deck A hot cues 1–4 | | `J` `K` `L` `;` | Deck B hot cues 1–4 |
+| `Shift` + hotcue key | Set that hot cue | | `,` / `.` | Crossfader left/right |
+| `Space` | Crossfader center | | wheel on waveform | zoom in/out |
 
 ## Architecture
 
@@ -69,22 +83,29 @@ Design notes:
   changes rebase the anchor and push `playbackRate` onto live sources, so tempo changes never
   glitch or restart playback.
 - **Sync** = tempo lock (`rate = masterEffBpm / trackBpm`) + phase alignment (grid phase
-  matched to the master's current beat phase, seeking to the nearest beat). No ongoing drift
-  correction yet — see roadmap.
+  matched to the master's current beat phase, seeking to the nearest beat) + an ongoing
+  drift lock (proportional phase correction, ±3% clamp, 5Hz update) while both decks play.
+- **Key lock** = `keylock-worklet.js`, a WSOLA-style granular time-stretcher in an
+  AudioWorklet (Hann-windowed overlap-add + cross-correlation grain alignment). Audio runs
+  ~70ms ahead of the position math; the worklet reports its true audible position back to
+  the deck to keep the numbers honest. Falls back to plain resampling if worklets fail.
 - **Stems are precomputed, not real-time**: separation runs once at ingestion; the deck then
   plays 4 sample-aligned buffers with gain nodes. The live path does zero ML, so sync/latency
-  behave exactly like a normal track.
+  behave exactly like a normal track. Key lock is unavailable while stems are loaded.
 - Stem WAVs land in `~/Library/Application Support/vibedeck/stems/<id>/…`.
+- **Streaming**: `src/renderer/sources/provider.ts` defines the seam; research on
+  SoundCloud/Spotify/TIDAL/YouTube lives in [docs/streaming.md](docs/streaming.md).
 
 ## Roadmap
 
-- [ ] Waveform + beatgrid rendering, click-to-seek
-- [ ] Hot cues (4 per deck, pads + MIDI)
-- [ ] Drift-correcting sync (PLL-style micro-nudge while both decks play)
-- [ ] Key lock: AudioWorklet phase vocoder or offline Rubber Band–style stretch
-- [ ] Real-time stem separation for un-analyzed tracks (ONNX / CoreML sidecar)
+- [ ] SoundCloud provider (OAuth 2.1 + PKCE, HLS → PCM, session-only cache, stems gated off)
+- [ ] TIDAL catalog enrichment (BPM/key backfill for the crate)
+- [ ] Beatgrid editing (tap tempo, nudge offset, half/double buttons)
+- [ ] Loop rolls (beat-loop 1/2/4/8 with worklet-friendly seek logic)
+- [ ] Waveform overview strip + library search/sort
 - [ ] Stem-aware recording of the master bus
-- [ ] Crate: search, sort, playlists, analysis queue with progress
+- [ ] Better key lock (phase vocoder or Rubber Band offline pre-render)
+- [ ] Analysis queue with progress UI for big crate imports
 
 ## Study material / credits
 

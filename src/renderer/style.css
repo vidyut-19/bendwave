@@ -75,6 +75,28 @@ main {
 .deck-stats { display: flex; gap: 14px; color: var(--dim); }
 .deck-stats .bpm { color: var(--text); font-weight: 700; min-width: 5ch; }
 
+.waveform-box { position: relative; }
+.waveform {
+  width: 100%;
+  height: 96px;
+  display: block;
+  background: #0e1116;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.hotcue-row { gap: 6px; }
+.hc { min-width: 30px; padding: 3px 6px; }
+.hc-hint { color: var(--dim); font-size: 10px; align-self: center; }
+.hc.set.hc1 { background: #ef4444; border-color: #ef4444; color: #1a0505; }
+.hc.set.hc2 { background: #f59e0b; border-color: #f59e0b; color: #1a1005; }
+.hc.set.hc3 { background: #10b981; border-color: #10b981; color: #04150d; }
+.hc.set.hc4 { background: #3b82f6; border-color: #3b82f6; color: #030d1a; }
+.t-btn.keylock.active { background: #a78bfa; border-color: #a78bfa; color: #14082a; }
+.t-btn.sync.active { background: var(--good); border-color: var(--good); color: #08130b; }
+
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .rate-row input { flex: 1; }
 .rate-val { min-width: 7ch; text-align: right; color: var(--dim); }

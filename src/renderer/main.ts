@@ -1,6 +1,8 @@
 import './style.css'
 import { DJEngine } from './engine/engine'
 import { computeBeatGrid } from './engine/analysis'
+import { WaveformView } from './engine/waveform'
+import { SyncController } from './engine/sync'
 import { STEM_ORDER, type Deck, type Track } from './engine/deck'
 import { CrateStore } from './crate/store'
 import { MidiRouter } from './midi/midi'
@@ -11,7 +13,10 @@ const AUDIO_EXT = /\.(wav|aiff?|flac|mp3|m4a|aac|ogg)$/i
 const engine = new DJEngine()
 const crate = new CrateStore()
 const midi = new MidiRouter()
+const syncCtl = new SyncController(engine)
 const refs = buildApp(document.getElementById('app')!)
+
+const waveforms = new Map<string, WaveformView>()
 
 let focusedDeck: 'A' | 'B' = 'A'
 let userDataDir = ''
@@ -64,6 +69,10 @@ async function loadStemBuffers(t: Track): Promise<AudioBuffer[]> {
     }
   }
   return out
+}
+
+function persistTrack(deck: Deck): void {
+  if (deck.track) crate.upsert(deck.track)
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +136,7 @@ async function enhanceWithSidecar(track: Track): Promise<void> {
     stemsDir: `${userDataDir}/stems/${slug(track.id)}`
   })
   if (!r.ok || !r.result) {
-    log(`sidecar unavailable — using browser estimate. install with: pip install librosa soundfile demucs`)
+    log('sidecar unavailable — using browser estimate. install with: pip install librosa soundfile demucs')
     return
   }
   const res = r.result as {
@@ -188,6 +197,7 @@ async function loadTrackIntoDeck(track: Track, buffer?: AudioBuffer): Promise<vo
       : focusedDeck === 'B'
         ? engine.deckB
         : engine.deckA
+  releaseSyncIfSlave(deck)
   try {
     const buf = buffer ?? (await decodePath(track.path))
     const stemBufs = track.stems ? await loadStemBuffers(track) : []
@@ -211,36 +221,78 @@ function deckOf(action: string): Deck | null {
   return null
 }
 
+function releaseSyncIfSlave(deck: Deck): void {
+  if (syncCtl.slave === deck.id) {
+    syncCtl.disengage()
+    log(`deck ${deck.id} sync lock released (manual control)`)
+  }
+}
+
 function actionPress(action: string): void {
   engine.resume()
   const deck = deckOf(action)
   if (deck) {
     const verb = action.slice(6)
+
+    const hc = /^(?:set)?[Hh]otcue([1-4])$/.exec(verb)
+    if (hc) {
+      const i = Number(hc[1]) - 1
+      if (verb.startsWith('set')) {
+        deck.hotCues[i] = deck.position
+        persistTrack(deck)
+        log(`deck ${deck.id} hot cue ${i + 1} set @ ${fmtTime(deck.position)}`)
+      } else {
+        const p = deck.hotCues[i]
+        if (p == null) {
+          log(`deck ${deck.id} hot cue ${i + 1} not set — shift+number or shift-click to set`)
+        } else {
+          releaseSyncIfSlave(deck)
+          deck.seek(p)
+          if (!deck.playing) deck.play()
+        }
+      }
+      return
+    }
+
     switch (verb) {
       case 'play':
         if (deck.playing) deck.pause()
         else deck.play()
         break
       case 'cue':
+        releaseSyncIfSlave(deck)
         deck.cuePress()
         break
       case 'setCue':
         deck.setCueHere()
+        persistTrack(deck)
         log(`deck ${deck.id} cue set @ ${fmtTime(deck.cuePoint)}`)
         break
       case 'sync': {
         const other = deck === engine.deckA ? engine.deckB : engine.deckA
-        if (deck.syncTo(other)) {
-          log(`deck ${deck.id} synced to deck ${other.id} (${(deck.effectiveBpm ?? 0).toFixed(1)} BPM)`)
+        if (syncCtl.slave === deck.id) {
+          syncCtl.disengage()
+          log(`deck ${deck.id} sync lock released`)
+        } else if (deck.syncTo(other)) {
+          syncCtl.engage(deck.id)
+          log(`deck ${deck.id} synced + drift lock ON (${(deck.effectiveBpm ?? 0).toFixed(1)} BPM)`)
         } else {
           log('sync failed — need audio + beatgrids on both decks')
         }
         break
       }
+      case 'keylock': {
+        const ok = deck.setKeylock(!deck.keylock)
+        if (ok) log(`deck ${deck.id} key lock ${deck.keylock ? 'ON' : 'OFF'} (experimental)`)
+        else log(`deck ${deck.id} key lock unavailable while stems are loaded`)
+        break
+      }
       case 'bendDown':
+        releaseSyncIfSlave(deck)
         deck.bend(-0.06)
         break
       case 'bendUp':
+        releaseSyncIfSlave(deck)
         deck.bend(0.06)
         break
     }
@@ -274,18 +326,39 @@ const KEY_ACTIONS: Record<string, string> = {
   KeyR: 'deckA.sync',
   Digit1: 'deckA.bendDown',
   Digit2: 'deckA.bendUp',
+  Digit3: 'deckA.keylock',
   KeyP: 'deckB.play',
   KeyO: 'deckB.cue',
   KeyI: 'deckB.setCue',
   KeyU: 'deckB.sync',
   Digit9: 'deckB.bendDown',
   Digit0: 'deckB.bendUp',
+  Digit8: 'deckB.keylock',
   Comma: 'mix.crossLeft',
   Period: 'mix.crossRight',
   Space: 'mix.crossCenter'
 }
 
+const HOTCUE_KEYS: Record<string, ['A' | 'B', number]> = {
+  KeyA: ['A', 1],
+  KeyS: ['A', 2],
+  KeyD: ['A', 3],
+  KeyF: ['A', 4],
+  KeyJ: ['B', 1],
+  KeyK: ['B', 2],
+  KeyL: ['B', 3],
+  Semicolon: ['B', 4]
+}
+
 document.addEventListener('keydown', (e) => {
+  const hc = HOTCUE_KEYS[e.code]
+  if (hc) {
+    e.preventDefault()
+    if (e.repeat) return
+    const [d, n] = hc
+    actionPress(`deck${d}.${e.shiftKey ? 'set' : ''}hotcue${n}`)
+    return
+  }
   const a = KEY_ACTIONS[e.code]
   if (!a) return
   e.preventDefault()
@@ -366,11 +439,23 @@ function deckRefs(deck: Deck): DeckRefs {
   return deck.id === 'A' ? refs.deckA : refs.deckB
 }
 
+function wfFor(deck: Deck): WaveformView {
+  return waveforms.get(deck.id)!
+}
+
 function wireDeck(deck: Deck, r: DeckRefs): void {
+  const wf = new WaveformView(r.waveform)
+  wf.onSeek = (t) => {
+    releaseSyncIfSlave(deck)
+    deck.seek(t)
+  }
+  waveforms.set(deck.id, wf)
+
   r.root.addEventListener('pointerdown', () => {
     focusedDeck = deck.id
   })
   r.rate.oninput = () => {
+    releaseSyncIfSlave(deck)
     deck.setTempoRate(1 + r.rate.valueAsNumber / 100)
     r.rateVal.textContent = pct(deck.tempoRate)
   }
@@ -378,6 +463,18 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   const applyEq = () => deck.setEQ(eqs[0].valueAsNumber, eqs[1].valueAsNumber, eqs[2].valueAsNumber)
   eqs.forEach((e) => (e.oninput = applyEq))
   r.stemSliders.forEach((s, i) => (s.oninput = () => deck.setStemGain(i, s.valueAsNumber)))
+
+  r.hotcueBtns.forEach((btn, i) => {
+    btn.addEventListener('pointerdown', (e) => {
+      if (e.shiftKey) actionPress(`deck${deck.id}.setHotcue${i + 1}`)
+      else if (e.altKey) {
+        deck.hotCues[i] = null
+        persistTrack(deck)
+        log(`deck ${deck.id} hot cue ${i + 1} cleared`)
+      } else actionPress(`deck${deck.id}.hotcue${i + 1}`)
+    })
+  })
+
   for (const btn of r.root.querySelectorAll<HTMLButtonElement>('button[data-act]')) {
     const act = btn.dataset.act!
     btn.addEventListener('pointerdown', () => actionPress(act))
@@ -389,6 +486,7 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
 function updateDeckUI(deck: Deck): void {
   const r = deckRefs(deck)
   r.name.textContent = deck.track?.name ?? '— empty —'
+  wfFor(deck).setBuffer(deck.audioBuffer)
   if (document.activeElement !== r.rate) {
     r.rate.value = String(((deck.tempoRate - 1) * 100).toFixed(2))
     r.rateVal.textContent = pct(deck.tempoRate)
@@ -410,7 +508,8 @@ function renderCrate(): void {
     const meta = [
       t.grid?.bpm ? t.grid.bpm.toFixed(1) : '?',
       t.camelot ?? '',
-      t.stems ? 'stems' : ''
+      t.stems ? 'stems' : '',
+      t.hotCues?.some((h) => h != null) ? 'cues' : ''
     ]
       .filter(Boolean)
       .join(' · ')
@@ -425,10 +524,19 @@ refs.master.addEventListener('input', () => {
   engine.master.gain.value = refs.master.valueAsNumber
 })
 
+let lastSyncUpdate = 0
+
 function tick(): void {
+  const now = performance.now()
+  if (now - lastSyncUpdate > 200) {
+    lastSyncUpdate = now
+    syncCtl.update()
+  }
   for (const deck of [engine.deckA, engine.deckB]) {
     const r = deckRefs(deck)
     r.playBtn.classList.toggle('active', deck.playing)
+    r.syncBtn.classList.toggle('active', syncCtl.slave === deck.id)
+    r.keylockBtn.classList.toggle('active', deck.keylock)
     const bpm = deck.effectiveBpm
     r.bpm.textContent = bpm ? bpm.toFixed(1) : '–.–'
     r.key.textContent = deck.track?.camelot ?? deck.track?.key ?? ''
@@ -438,6 +546,10 @@ function tick(): void {
       r.rate.value = String(((deck.tempoRate - 1) * 100).toFixed(2))
       r.rateVal.textContent = pct(deck.tempoRate)
     }
+    for (let i = 0; i < r.hotcueBtns.length; i++) {
+      r.hotcueBtns[i].classList.toggle('set', deck.hotCues[i] != null)
+    }
+    wfFor(deck).draw(deck)
   }
   if (document.activeElement !== refs.xfader) {
     refs.xfader.value = String(engine.mixer.position)
@@ -450,8 +562,14 @@ function tick(): void {
 // ---------------------------------------------------------------------------
 
 const ACTION_IDS = [
-  'deckA.play', 'deckA.cue', 'deckA.setCue', 'deckA.sync', 'deckA.bendDown', 'deckA.bendUp',
-  'deckB.play', 'deckB.cue', 'deckB.setCue', 'deckB.sync', 'deckB.bendDown', 'deckB.bendUp',
+  'deckA.play', 'deckA.cue', 'deckA.setCue', 'deckA.sync', 'deckA.keylock',
+  'deckA.bendDown', 'deckA.bendUp',
+  'deckA.hotcue1', 'deckA.hotcue2', 'deckA.hotcue3', 'deckA.hotcue4',
+  'deckA.setHotcue1', 'deckA.setHotcue2', 'deckA.setHotcue3', 'deckA.setHotcue4',
+  'deckB.play', 'deckB.cue', 'deckB.setCue', 'deckB.sync', 'deckB.keylock',
+  'deckB.bendDown', 'deckB.bendUp',
+  'deckB.hotcue1', 'deckB.hotcue2', 'deckB.hotcue3', 'deckB.hotcue4',
+  'deckB.setHotcue1', 'deckB.setHotcue2', 'deckB.setHotcue3', 'deckB.setHotcue4',
   'mix.crossLeft', 'mix.crossRight', 'mix.crossCenter', 'mix.crossfade'
 ]
 
@@ -504,11 +622,21 @@ void (async () => {
   renderCrate()
   wireDeck(engine.deckA, refs.deckA)
   wireDeck(engine.deckB, refs.deckB)
+  for (const deck of [engine.deckA, engine.deckB]) {
+    deck.onEnded = () => log(`deck ${deck.id} track ended`)
+    deck.onKeylockError = (m) =>
+      log(`deck ${deck.id} key lock unavailable (${m}) — playing without it`)
+  }
   renderMidiPanel()
   const midiOk = await midi.init()
   renderMidiPanel()
-  log(midiOk ? 'midi ready — click "learn" next to an action, then touch a control' : 'web midi unavailable in this build')
+  log(
+    midiOk
+      ? 'midi ready — click "learn" next to an action, then touch a control'
+      : 'web midi unavailable in this build'
+  )
   log('drop tracks anywhere (or "add tracks…") — bpm runs instantly, stems follow via sidecar')
+  log('SYNC engages a drift lock — press SYNC again to release it')
   window.addEventListener('pointerdown', () => engine.resume())
   requestAnimationFrame(tick)
 })()

@@ -8,6 +8,10 @@ export interface DeckRefs {
   rateVal: HTMLElement
   playBtn: HTMLButtonElement
   cueBtn: HTMLButtonElement
+  syncBtn: HTMLButtonElement
+  keylockBtn: HTMLButtonElement
+  waveform: HTMLCanvasElement
+  hotcueBtns: HTMLButtonElement[]
   stemsBox: HTMLElement
   stemSliders: HTMLInputElement[]
   eqLow: HTMLInputElement
@@ -35,6 +39,7 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
     <span class="stat key"></span>
     <span class="stat pos">0:00.0</span>
   </div>
+  <div class="waveform-box"><canvas class="waveform"></canvas></div>
   <div class="row rate-row">
     <input class="rate" type="range" min="-8" max="8" step="0.05" value="0" />
     <span class="rate-val">+0.00%</span>
@@ -57,6 +62,14 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
     <button class="t-btn cue" data-act="deck${id}.cue">CUE</button>
     <button class="t-btn" data-act="deck${id}.setCue">SET&nbsp;CUE</button>
     <button class="t-btn sync" data-act="deck${id}.sync">SYNC</button>
+    <button class="t-btn keylock" data-act="deck${id}.keylock">KEY</button>
+  </div>
+  <div class="row hotcue-row">
+    <button class="hc hc1" data-act="deck${id}.hotcue1">1</button>
+    <button class="hc hc2" data-act="deck${id}.hotcue2">2</button>
+    <button class="hc hc3" data-act="deck${id}.hotcue3">3</button>
+    <button class="hc hc4" data-act="deck${id}.hotcue4">4</button>
+    <span class="hc-hint">shift+click sets · alt+click clears</span>
   </div>
 `
 
@@ -76,6 +89,10 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
     rateVal: q('.rate-val'),
     playBtn: q('.play'),
     cueBtn: q('.cue'),
+    syncBtn: q('.sync'),
+    keylockBtn: q('.keylock'),
+    waveform: q('.waveform'),
+    hotcueBtns: [1, 2, 3, 4].map((n) => q(`.hc${n}`)),
     stemsBox: q('.stems-row'),
     stemSliders: Array.from(root.querySelectorAll<HTMLInputElement>('.stem input')),
     eqLow: q('.eq-low'),
@@ -90,7 +107,8 @@ export function buildApp(root: HTMLElement): AppRefs {
   const header = document.createElement('header')
   const addBtn = document.createElement('button')
   addBtn.textContent = 'add tracks…'
-  header.innerHTML = '<h1>VIBEDECK</h1><span class="hint">drop audio anywhere · Q/W = deck A play/cue · P/O = deck B · , . crossfade · space = center</span>'
+  header.innerHTML =
+    '<h1>VIBEDECK</h1><span class="hint">drop audio anywhere · Q/W deck A · P/O deck B · A S D F / J K L ; hot cues · SYNC twice to unlock</span>'
   header.append(addBtn)
 
   const main = document.createElement('main')

@@ -1,3 +1,5 @@
+import { KeylockNode } from './keylock'
+
 export interface BeatGrid {
   /** beats per minute */
   bpm: number
@@ -22,6 +24,10 @@ export interface Track {
   key?: string
   camelot?: string
   stems?: Stems
+  /** main cue point (seconds), persisted in the crate */
+  cue?: number
+  /** 4 hot cue points (seconds or null), persisted in the crate */
+  hotCues?: (number | null)[]
   analyzedAt?: string
   analysisSource?: 'browser' | 'sidecar'
 }
@@ -30,8 +36,9 @@ export const STEM_ORDER = ['drums', 'bass', 'other', 'vocals'] as const
 export type StemName = (typeof STEM_ORDER)[number]
 
 /**
- * A single deck. Plays one track, optionally as 4 sample-aligned stem layers
- * instead of the full mix, through an EQ strip into the mixer.
+ * A single deck. Plays one track — either the full mix, 4 sample-aligned stem
+ * layers, or (experimental) through the key-lock time-stretcher — through an
+ * EQ strip into the mixer.
  *
  * Position math: position = startPos + (ctx.currentTime - startedAt) * effRate.
  * Whenever tempo or bend changes we "rebase" (startPos = position now) and then
@@ -47,10 +54,18 @@ export class Deck {
   private startPos = 0
   private cueHolding = false
 
+  /** experimental pitch-preserving playback (full-mix decks only, no stems) */
+  keylock = false
+  private kl: KeylockNode | null = null
+  private klBusy = false
+  onEnded?: () => void
+  onKeylockError?: (msg: string) => void
+
   tempoRate = 1
   bendDelta = 0
   playing = false
   cuePoint = 0
+  hotCues: (number | null)[] = [null, null, null, null]
   track: Track | null = null
 
   private preGain: GainNode
@@ -89,6 +104,10 @@ export class Deck {
     return this.buffer?.duration ?? 0
   }
 
+  get audioBuffer(): AudioBuffer | null {
+    return this.buffer
+  }
+
   get effRate(): number {
     return Math.max(0.05, this.tempoRate * (1 + this.bendDelta))
   }
@@ -114,13 +133,21 @@ export class Deck {
 
   async load(track: Track, buffer: AudioBuffer, stemBuffers: AudioBuffer[] = []): Promise<void> {
     this.stopSources()
+    if (this.kl) {
+      this.kl.dispose()
+      this.kl = null
+    }
     this.playing = false
     this.cueHolding = false
     this.track = track
     this.buffer = buffer
     this.setStemBuffers(stemBuffers)
+    if (!Array.isArray(track.hotCues) || track.hotCues.length !== 4) {
+      track.hotCues = [null, null, null, null]
+    }
+    this.hotCues = track.hotCues
+    this.cuePoint = track.cue ?? 0
     this.startPos = 0
-    this.cuePoint = 0
     this.tempoRate = 1
     this.bendDelta = 0
   }
@@ -136,6 +163,7 @@ export class Deck {
     if (this.playing) {
       const p = this.position
       this.stopSources()
+      if (this.kl) this.kl.stop()
       this.startSources(p)
     }
   }
@@ -150,13 +178,18 @@ export class Deck {
     if (this.startPos >= this.duration - 0.05) this.startPos = 0
     this.playing = true
     this.startedAt = this.ctx.currentTime
-    this.startSources(this.startPos)
+    if (this.useKeylock()) {
+      void this.startKeylock(this.startPos)
+    } else {
+      this.startSources(this.startPos)
+    }
   }
 
   pause(): void {
     if (!this.playing) return
     const p = this.position
     this.stopSources()
+    if (this.kl) this.kl.stop()
     this.playing = false
     this.startPos = p
   }
@@ -167,9 +200,15 @@ export class Deck {
       this.stopSources()
       this.startPos = p
       this.startedAt = this.ctx.currentTime
-      this.startSources(p)
+      if (this.useKeylock()) {
+        if (this.kl) this.kl.seek(p)
+        else void this.startKeylock(p)
+      } else {
+        this.startSources(p)
+      }
     } else {
       this.startPos = p
+      if (this.kl) this.kl.seek(p)
     }
   }
 
@@ -193,6 +232,10 @@ export class Deck {
   }
 
   private applyRate(): void {
+    if (this.kl && this.useKeylock()) {
+      this.kl.setRate(this.effRate)
+      return
+    }
     for (const s of this.sources) s.playbackRate.value = this.effRate
   }
 
@@ -220,6 +263,7 @@ export class Deck {
 
   setCueHere(): void {
     this.cuePoint = Math.min(Math.max(this.position, 0), this.duration)
+    if (this.track) this.track.cue = this.cuePoint
   }
 
   /**
@@ -243,6 +287,57 @@ export class Deck {
     if (pos < 0) pos += sBeat
     this.seek(pos)
     return true
+  }
+
+  /** Toggle pitch-preserving playback. Returns false when stems make it unavailable. */
+  setKeylock(on: boolean): boolean {
+    if (on && this.stemLayers.length > 0) return false
+    if (this.keylock === on) return true
+    this.keylock = on
+    if (this.playing) {
+      const p = this.position
+      this.stopSources()
+      if (this.kl) this.kl.stop()
+      this.startPos = p
+      this.startedAt = this.ctx.currentTime
+      if (on) void this.startKeylock(p)
+      else this.startSources(p)
+    }
+    return true
+  }
+
+  private useKeylock(): boolean {
+    return this.keylock && !!this.buffer && this.stemLayers.length === 0
+  }
+
+  private async startKeylock(pos: number): Promise<void> {
+    if (this.klBusy) return
+    this.klBusy = true
+    try {
+      if (!this.kl && this.buffer) {
+        this.kl = await KeylockNode.create(this.ctx, this.buffer, this.preGain)
+        this.kl.onPosition = (p) => {
+          if (this.playing) {
+            this.startPos = p
+            this.startedAt = this.ctx.currentTime
+          }
+        }
+        this.kl.onEnded = () => {
+          if (this.playing) {
+            this.playing = false
+            this.startPos = this.duration
+            this.onEnded?.()
+          }
+        }
+      }
+      if (this.playing && this.useKeylock()) this.kl?.play(pos, this.effRate)
+    } catch (e) {
+      this.keylock = false
+      this.onKeylockError?.(String(e))
+      if (this.playing) this.startSources(this.position)
+    } finally {
+      this.klBusy = false
+    }
   }
 
   private startSources(from: number): void {
