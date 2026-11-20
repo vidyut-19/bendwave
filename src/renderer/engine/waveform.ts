@@ -52,7 +52,6 @@ export class WaveformView {
     if (!this.onSeek || !this.peaks) return
     const rect = this.canvas.getBoundingClientRect()
     const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
-    // xToTime needs the deck's current position — approximate using last drawn pos
     const t = this.lastT0 + frac * this.zoomSec
     this.onSeek(t)
   }

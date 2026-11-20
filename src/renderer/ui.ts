@@ -170,7 +170,7 @@ export function buildApp(root: HTMLElement): AppRefs {
   const addBtn = document.createElement('button')
   addBtn.textContent = 'add tracks…'
   header.innerHTML =
-    '<h1>VIBEDECK</h1><span class="hint">drop audio anywhere · Q/W deck A · P/O deck B · A S D F / J K L ; hot cues · SYNC twice to unlock</span><span class="mem-meter"></span>'
+    '<h1>VIBEDECK</h1><span class="hint">drop audio anywhere · full key map in README.md</span><span class="mem-meter"></span>'
   header.append(addBtn)
 
   const main = document.createElement('main')

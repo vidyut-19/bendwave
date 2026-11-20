@@ -745,6 +745,7 @@ refs.samplerPads.forEach((pad, i) => {
   pad.addEventListener('pointerdown', (e) => {
     if (e.altKey) {
       sampler.clear(i)
+      audioMem.release(`smp:${i + 1}`)
       persistSampler()
       updateSamplerUI()
       log(`sampler slot ${i + 1} cleared`)
@@ -782,9 +783,11 @@ let lastSyncUpdate = 0
 let lastFxBpmUpdate = 0
 let lastMemUpdate = 0
 let lastMemEnforce = 0
+let lastIdleDraw = 0
 
 function tick(): void {
   const now = performance.now()
+  const anyPlaying = engine.deckA.playing || engine.deckB.playing
   if (now - lastSyncUpdate > 200) {
     lastSyncUpdate = now
     syncCtl.update()
@@ -846,13 +849,16 @@ function tick(): void {
       [r.eqHigh, eq.high]
     ]
     for (const [slider, db] of eqSliders) {
-      if (document.activeElement !== slider) slider.value = String(db.toFixed(1))
+      if (document.activeElement !== slider && Math.abs(slider.valueAsNumber - db) > 0.1) {
+        slider.value = String(db.toFixed(1))
+      }
     }
-    wfFor(deck).draw(deck)
+    if (deck.playing || now - lastIdleDraw > 500) wfFor(deck).draw(deck)
   }
   if (document.activeElement !== refs.xfader) {
     refs.xfader.value = String(engine.mixer.position)
   }
+  if (!anyPlaying && now - lastIdleDraw > 500) lastIdleDraw = now
   refs.splitCueBtn.classList.toggle('active', engine.splitCue)
   refs.autoGainBtn.classList.toggle('active', autoGain)
   requestAnimationFrame(tick)

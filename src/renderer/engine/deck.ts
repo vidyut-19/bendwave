@@ -83,7 +83,6 @@ export class Deck {
   activeLoop: { start: number; len: number; beats: number } | null = null
   /** when true, loop pads latch instead of momentary rolls */
   loopLatch = false
-  private loopHeld = false
   private loopNext: { sources: AudioBufferSourceNode[]; atTime: number } | null = null
 
   private preGain: GainNode
@@ -215,7 +214,6 @@ export class Deck {
     this.bendDelta = 0
     this.activeLoop = null
     this.loopNext = null
-    this.loopHeld = false
   }
 
   /** Swaps stem layers; when non-empty, stems replace the full mix on playback. */
@@ -355,7 +353,6 @@ export class Deck {
       start = Math.max(0, Math.min(Math.max(0, this.duration - len), grid.offset + k * beat))
     }
     this.activeLoop = { start, len, beats }
-    this.loopHeld = true
     if (this.playing) {
       if (this.useKeylock()) {
         this.kl?.setLoop(start, len)
@@ -367,7 +364,6 @@ export class Deck {
 
   /** Release a held roll — jumps forward to the virtual position. */
   releaseLoop(): void {
-    this.loopHeld = false
     if (this.activeLoop && !this.loopLatch) this.clearLoop(true)
   }
 
@@ -386,7 +382,6 @@ export class Deck {
 
   private clearLoop(restart: boolean): void {
     this.activeLoop = null
-    this.loopHeld = false
     this.cancelLoopScheduling()
     this.kl?.clearLoop()
     if (restart && this.playing) this.restartAt(this.position)

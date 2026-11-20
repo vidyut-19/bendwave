@@ -37,6 +37,8 @@
                        │                                            ▼
                        ▼                                        CUE BUS ──► ch 3/4
                    MASTER ──► merger ──► ch 1/2 ──► output  (split-cue mode)
+                       ▲
+     sampler (8 pads) ─┘   auto-gain sets TRIM on load (−14 LUFS target)
 ```
 
 ## 2. Memory architecture — who owns RAM, and the tiers down
