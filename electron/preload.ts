@@ -17,6 +17,21 @@ contextBridge.exposeInMainWorld('vibedeck', {
   recWrite: (chunk: Uint8Array) => ipcRenderer.invoke('rec:write', chunk) as Promise<{ ok: boolean }>,
   recFinish: (frames: number, sampleRate: number) =>
     ipcRenderer.invoke('rec:finish', frames, sampleRate) as Promise<{ ok: boolean; path: string | null }>,
+  envStatus: () =>
+    ipcRenderer.invoke('env:status') as Promise<{
+      venv: boolean
+      python: string
+      installing: boolean
+      librosa: boolean
+      demucs: boolean
+    }>,
+  envInstall: (opts?: { stems?: boolean }) =>
+    ipcRenderer.invoke('env:install', opts) as Promise<{ ok: boolean; error?: string }>,
+  onEnvLog: (cb: (line: string) => void): (() => void) => {
+    const listener = (_e: unknown, line: string): void => cb(line)
+    ipcRenderer.on('env:log', listener)
+    return () => ipcRenderer.removeListener('env:log', listener)
+  },
   scStatus: () =>
     ipcRenderer.invoke('sc:status') as Promise<{ configured: boolean; loggedIn: boolean; username?: string }>,
   scLogin: () => ipcRenderer.invoke('sc:login') as Promise<{ ok: boolean; error?: string; username?: string }>,

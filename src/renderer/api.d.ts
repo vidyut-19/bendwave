@@ -15,6 +15,15 @@ declare global {
     recStart(): Promise<{ ok: boolean; path?: string; error?: string }>
     recWrite(chunk: Uint8Array): Promise<{ ok: boolean }>
     recFinish(frames: number, sampleRate: number): Promise<{ ok: boolean; path: string | null }>
+    envStatus(): Promise<{
+      venv: boolean
+      python: string
+      installing: boolean
+      librosa: boolean
+      demucs: boolean
+    }>
+    envInstall(opts?: { stems?: boolean }): Promise<{ ok: boolean; error?: string }>
+    onEnvLog(cb: (line: string) => void): () => void
     scStatus(): Promise<{ configured: boolean; loggedIn: boolean; username?: string }>
     scLogin(): Promise<{ ok: boolean; error?: string; username?: string }>
     scLogout(): Promise<{ ok: boolean }>

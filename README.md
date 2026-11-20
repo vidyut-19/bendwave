@@ -122,9 +122,32 @@ npm run dist        # → release/vibedeck-<version>-arm64.dmg
 ```
 
 The DMG is unsigned (Gatekeeper will ask: right-click → Open the first time). The python
-sidecar is bundled via `extraResources` and resolved from `process.resourcesPath` when
-packaged. Install dev tools for stems/key analysis as usual (`pip install librosa
-soundfile demucs`) — they run from your system python, not the app bundle.
+sidecar script is bundled via `extraResources`; the heavy python deps are **not** in the
+DMG (demucs + torch ≈ 2 GB) — the app bootstraps a private venv on demand:
+
+- "install analysis env" (header button): librosa + soundfile → better BPM/key
+- "+ stems": adds demucs + torch (~2 GB, one time), pip output streams to the log panel
+
+Everything lands in `~/Library/Application Support/vibedeck/pyenv/` and the sidecar always
+prefers it. Without any of it, the app still works — browser-side BPM covers beatmatch/sync.
+
+### Signing (when you want to distribute to other Macs)
+
+For personal use on your own machine: nothing needed — right-click → Open once.
+
+To distribute: **Apple Developer Program, $99/yr**. Then in `package.json` `build.mac`:
+
+```json
+"identity": "Developer ID Application: Your Name (TEAMID)",
+"notarize": { "teamId": "TEAMID" }
+```
+
+with `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` (appleid.apple.com → sign-in & security →
+app-specific password) and `APPLE_TEAM_ID` in the environment. electron-builder then
+signs with the hardened runtime + entitlements (already staged in
+`build/entitlements.mac.plist`), notarizes, and staples the ticket — the DMG opens
+cleanly on anyone's Mac. A free Apple ID can't issue Developer ID certs, so there is no
+$0 path for outside-the-App-Store distribution.
 
 ## Architecture
 

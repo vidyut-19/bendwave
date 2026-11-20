@@ -44,6 +44,9 @@ export interface AppRefs {
   samplerPads: HTMLButtonElement[]
   samplerVol: HTMLInputElement
   memMeter: HTMLElement
+  envSetup: HTMLElement
+  envInstallBtn: HTMLButtonElement
+  envInstallStemsBtn: HTMLButtonElement
   crateQuery: HTMLInputElement
   crateSort: HTMLSelectElement
   crateList: HTMLUListElement
@@ -181,7 +184,7 @@ export function buildApp(root: HTMLElement): AppRefs {
   const addBtn = document.createElement('button')
   addBtn.textContent = 'add tracks…'
   header.innerHTML =
-    '<h1>VIBEDECK</h1><span class="hint">drop audio anywhere · full key map in README.md</span><span class="mem-meter"></span>'
+    '<h1>VIBEDECK</h1><span class="hint">drop audio anywhere · full key map in README.md</span><span class="mem-meter"></span><span class="env-setup" hidden><button class="env-install">install analysis env</button><button class="env-install-stems" title="adds demucs + torch (~2 GB, one time)">+ stems</button></span>'
   header.append(addBtn)
 
   const main = document.createElement('main')
@@ -256,6 +259,9 @@ export function buildApp(root: HTMLElement): AppRefs {
     samplerPads: Array.from(mixer.querySelectorAll<HTMLButtonElement>('.smp')),
     samplerVol: mixer.querySelector('.sampler-vol') as HTMLInputElement,
     memMeter: header.querySelector('.mem-meter') as HTMLElement,
+    envSetup: header.querySelector('.env-setup') as HTMLElement,
+    envInstallBtn: header.querySelector('.env-install') as HTMLButtonElement,
+    envInstallStemsBtn: header.querySelector('.env-install-stems') as HTMLButtonElement,
     crateList: footer.querySelector('.crate-list') as HTMLUListElement,
     crateCount: footer.querySelector('.crate-count') as HTMLElement,
     crateQuery: footer.querySelector('.crate-q') as HTMLInputElement,

@@ -34,6 +34,10 @@ header h1 { font-size: 14px; margin: 0; letter-spacing: 0.08em; }
 header .hint { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 header .mem-meter { margin-left: auto; color: var(--dim); font-size: 11px; white-space: nowrap; }
 header .mem-meter.warn { color: #f59e0b; }
+header .env-setup { display: flex; gap: 6px; }
+header .env-setup[hidden] { display: none; }
+header .env-setup button { font-size: 11px; padding: 3px 8px; }
+header .env-setup button:disabled { opacity: 0.5; cursor: default; }
 
 button {
   background: var(--panel-2);

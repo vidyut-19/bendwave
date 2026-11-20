@@ -150,6 +150,95 @@ ipcMain.handle('rec:finish', async (_e, frames: number, sampleRate: number) => {
   return { ok: true, path: recPath }
 })
 
+// --- analysis python environment (auto-bootstrap) ---------------------------
+// Heavy deps (librosa ~200MB, demucs+torch ~2GB) stay OUT of the DMG; instead
+// the app builds a private venv in userData on demand and always prefers it.
+
+function envPythonPath(): string {
+  return path.join(app.getPath('userData'), 'pyenv', 'bin', 'python3')
+}
+
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function resolvePythonBin(): Promise<string> {
+  return (await fileExists(envPythonPath())) ? envPythonPath() : 'python3'
+}
+
+function envLog(line: string): void {
+  if (!line) return
+  try {
+    win?.webContents.send('env:log', line)
+  } catch {
+    /* window may be gone */
+  }
+}
+
+function runStream(bin: string, args: string[], cwd?: string): Promise<number> {
+  return new Promise((resolve) => {
+    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], cwd })
+    const onLine = (d: Buffer) => envLog(d.toString().trimEnd())
+    child.stdout?.on('data', onLine)
+    child.stderr?.on('data', onLine)
+    child.on('error', (e) => {
+      envLog(`spawn failed: ${e.message}`)
+      resolve(1)
+    })
+    child.on('close', (c) => resolve(c ?? 1))
+  })
+}
+
+async function probeImports(bin: string): Promise<{ librosa: boolean; demucs: boolean }> {
+  const probe = (code: string) =>
+    new Promise<boolean>((resolve) => {
+      const child = spawn(bin, ['-c', code], { stdio: ['ignore', 'ignore', 'ignore'] })
+      child.on('error', () => resolve(false))
+      child.on('close', (c) => resolve(c === 0))
+    })
+  const librosa = await probe('import librosa, soundfile')
+  const demucs = await probe('import demucs, torch')
+  return { librosa, demucs }
+}
+
+let envInstalling = false
+
+ipcMain.handle('env:status', async () => {
+  const venv = await fileExists(envPythonPath())
+  const bin = venv ? envPythonPath() : 'python3'
+  const probe = await probeImports(bin)
+  return { venv, python: bin, installing: envInstalling, ...probe }
+})
+
+ipcMain.handle('env:install', async (_e, opts: { stems?: boolean } = {}) => {
+  if (envInstalling) return { ok: false, error: 'installation already running' }
+  envInstalling = true
+  try {
+    if (!(await fileExists(envPythonPath()))) {
+      envLog('creating private python environment (one time)…')
+      const code = await runStream('python3', ['-m', 'venv', path.join(app.getPath('userData'), 'pyenv')])
+      if (code !== 0) {
+        return {
+          ok: false,
+          error: 'python3 -m venv failed — install Command Line Tools first: xcode-select --install'
+        }
+      }
+    }
+    const args = ['-m', 'pip', 'install', '--prefer-binary', '--upgrade', 'librosa', 'soundfile']
+    if (opts.stems) args.push('demucs')
+    envLog(`pip ${args.slice(3).join(' ')} — this can take a while (stems/torch ≈ 2 GB, one time)…`)
+    const code = await runStream(envPythonPath(), args)
+    return code === 0 ? { ok: true } : { ok: false, error: 'pip install failed — see log panel' }
+  } finally {
+    envInstalling = false
+  }
+})
+
 /**
  * Runs tools/analyze.py (librosa bpm/key + optional demucs stems) and returns
  * its JSON result. Fails soft: { ok: false, error } so the renderer can fall
@@ -159,12 +248,13 @@ ipcMain.handle('ingest:analyze', async (_e, filePath: string, opts: AnalyzeOptio
   const script = app.isPackaged
     ? path.join(process.resourcesPath, 'tools', 'analyze.py')
     : path.join(app.getAppPath(), 'tools', 'analyze.py')
+  const pythonBin = opts.python ?? (await resolvePythonBin())
   const args = [script, filePath]
   if (opts.stems) {
     args.push('--stems', '--stems-dir', opts.stemsDir ?? path.join(app.getPath('userData'), 'stems'))
   }
   return await new Promise<{ ok: boolean; result?: unknown; error?: string }>((resolve) => {
-    const child = spawn(opts.python ?? 'python3', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(pythonBin, args, { stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     let err = ''
     child.stdout.on('data', (d) => (out += d.toString()))

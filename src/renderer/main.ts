@@ -172,7 +172,7 @@ async function enhanceWithSidecar(track: Track): Promise<void> {
     stemsDir: `${userDataDir}/stems/${slug(track.id)}`
   })
   if (!r.ok || !r.result) {
-    log('sidecar unavailable — using browser estimate. install with: pip install librosa soundfile demucs')
+    log('sidecar analysis unavailable — click "install analysis env" in the header for better BPM/key/stems')
     return
   }
   const res = r.result as {
@@ -1291,6 +1291,42 @@ async function addStreamTrack(ref: StreamTrackRef): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// analysis env bootstrap (librosa/demucs live in a private venv, not the DMG)
+// ---------------------------------------------------------------------------
+
+async function refreshEnvStatus(): Promise<void> {
+  const s = await window.vibedeck?.envStatus()
+  if (!s) return
+  const showSetup = !s.librosa || (!s.demucs && !s.installing)
+  refs.envSetup.hidden = !showSetup
+  refs.envInstallBtn.hidden = s.librosa
+  refs.envInstallStemsBtn.hidden = s.demucs
+  refs.envInstallBtn.disabled = s.installing
+  refs.envInstallStemsBtn.disabled = s.installing
+  if (s.librosa && s.demucs) log('analysis env ready (librosa + demucs)')
+}
+
+refs.envInstallBtn.addEventListener('click', () => {
+  void (async () => {
+    refs.envInstallBtn.disabled = true
+    const r = await window.vibedeck?.envInstall()
+    log(r?.ok ? 'analysis env installed ✓ (BPM/key via librosa)' : `env install failed: ${r?.error}`)
+    await refreshEnvStatus()
+  })()
+})
+
+refs.envInstallStemsBtn.addEventListener('click', () => {
+  void (async () => {
+    refs.envInstallStemsBtn.disabled = true
+    const r = await window.vibedeck?.envInstall({ stems: true })
+    log(r?.ok ? 'stems support installed ✓ (demucs)' : `stems install failed: ${r?.error}`)
+    await refreshEnvStatus()
+  })()
+})
+
+window.vibedeck?.onEnvLog((line) => log(`py: ${line}`))
+
+// ---------------------------------------------------------------------------
 // boot
 // ---------------------------------------------------------------------------
 
@@ -1308,6 +1344,7 @@ void (async () => {
   }
   renderMidiPanel()
   await restoreSampler()
+  await refreshEnvStatus()
   await sc.refreshStatus()
   updateStreamPanel()
   if (sc.configured && !sc.loggedIn) {
