@@ -10,12 +10,44 @@
     "postinstall": "node scripts/ensure-electron.mjs",
     "build": "npm run build:electron && vite build",
     "typecheck": "tsc --noEmit",
-    "start": "npm run build && electron ."
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --mac",
+    "dist:dir": "npm run build && electron-builder --mac --dir"
+  },
+  "build": {
+    "appId": "com.vidyut19.vibedeck",
+    "productName": "vibedeck",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json",
+      "README.md"
+    ],
+    "extraResources": [
+      {
+        "from": "tools",
+        "to": "tools"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64"]
+        }
+      ],
+      "identity": null
+    }
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "concurrently": "^9.0.0",
     "electron": "^35.0.0",
+    "electron-builder": "^26.18.0",
     "esbuild": "^0.25.0",
     "typescript": "~5.8.3",
     "vite": "^6.3.5",

@@ -129,6 +129,30 @@ main {
 
 .loop-row { gap: 6px; }
 .loop-lab { color: var(--dim); font-size: 11px; }
+.jump-row { gap: 6px; }
+.t-btn.jump { min-width: 34px; }
+.t-btn.rec-btn.active { background: #ef4444; border-color: #ef4444; color: #fff; min-width: 5ch; }
+.crate-tools { display: flex; gap: 6px; margin-bottom: 6px; }
+.crate-tools input {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 6px;
+}
+.crate-tools select {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 2px;
+}
 .t-btn.loop { min-width: 30px; }
 .t-btn.loop.active { background: #a78bfa; border-color: #a78bfa; color: #14082a; }
 .t-btn.loop-latch.active { background: #f59e0b; border-color: #f59e0b; color: #1a1005; }

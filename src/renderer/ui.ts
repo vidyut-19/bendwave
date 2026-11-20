@@ -30,6 +30,7 @@ export interface DeckRefs {
   loopBtns: HTMLButtonElement[]
   loopLatchBtn: HTMLButtonElement
   loopExitBtn: HTMLButtonElement
+  jumpSizeBtn: HTMLButtonElement
 }
 
 export interface AppRefs {
@@ -39,9 +40,12 @@ export interface AppRefs {
   master: HTMLInputElement
   splitCueBtn: HTMLButtonElement
   autoGainBtn: HTMLButtonElement
+  recBtn: HTMLButtonElement
   samplerPads: HTMLButtonElement[]
   samplerVol: HTMLInputElement
   memMeter: HTMLElement
+  crateQuery: HTMLInputElement
+  crateSort: HTMLSelectElement
   crateList: HTMLUListElement
   crateCount: HTMLElement
   midiDevices: HTMLElement
@@ -120,6 +124,12 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
     <button class="t-btn loop-latch" data-act="deck${id}.loopLatch" title="latching loops instead of momentary rolls">LATCH</button>
     <button class="t-btn loop-exit" data-act="deck${id}.loopExit">EXIT</button>
   </div>
+  <div class="row jump-row">
+    <span class="loop-lab">JUMP</span>
+    <button class="t-btn jump jb" data-act="deck${id}.jumpBack" title="beat jump back (grid-quantized)">◀◀</button>
+    <button class="t-btn jump jf" data-act="deck${id}.jumpFwd" title="beat jump forward">▶▶</button>
+    <button class="t-btn jump-size" data-act="deck${id}.jumpSize" title="jump size in beats">4</button>
+  </div>
 `
 
 function buildDeck(id: 'A' | 'B'): DeckRefs {
@@ -159,7 +169,8 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
     cueMixBtn: q('.cuemix'),
     loopBtns: [1, 2, 4, 8].map((n) => q(`.loop${n}`)),
     loopLatchBtn: q('.loop-latch'),
-    loopExitBtn: q('.loop-exit')
+    loopExitBtn: q('.loop-exit'),
+    jumpSizeBtn: q('.jump-size')
   }
 }
 
@@ -184,6 +195,7 @@ export function buildApp(root: HTMLElement): AppRefs {
     <button class="t-btn xf-center" data-act="mix.crossCenter">CENTER</button>
     <button class="t-btn split-cue" data-act="mix.splitCue" title="master on ch 1/2, headphone cue on ch 3/4 (use an aggregate audio device)">SPLIT CUE</button>
     <button class="t-btn auto-gain" data-act="mix.autoGain" title="normalize tracks to ${-14} LUFS via trim on load">AUTO GAIN</button>
+    <button class="t-btn rec-btn" data-act="mix.record" title="record the master bus to ~/Music/vibedeck/ (blocked while SoundCloud tracks are loaded)">REC</button>
     <div class="row"><span>MASTER</span><input class="master" type="range" min="0" max="1" step="0.01" value="0.85" style="flex:1" /></div>
     <div class="sampler-box">
       <div class="panel-title">SAMPLER <span class="sampler-hint">drop on pads · alt+click clears</span></div>
@@ -199,6 +211,15 @@ export function buildApp(root: HTMLElement): AppRefs {
   footer.innerHTML = `
     <section class="crate">
       <div class="panel-title">CRATE <span class="crate-count"></span></div>
+      <div class="crate-tools">
+        <input class="crate-q" type="text" placeholder="search…" />
+        <select class="crate-sort">
+          <option value="name">name</option>
+          <option value="bpm">bpm</option>
+          <option value="key">key</option>
+          <option value="recent">recent</option>
+        </select>
+      </div>
       <ul class="crate-list"></ul>
     </section>
     <section class="stream-panel">
@@ -231,11 +252,14 @@ export function buildApp(root: HTMLElement): AppRefs {
     master: mixer.querySelector('.master') as HTMLInputElement,
     splitCueBtn: mixer.querySelector('.split-cue') as HTMLButtonElement,
     autoGainBtn: mixer.querySelector('.auto-gain') as HTMLButtonElement,
+    recBtn: mixer.querySelector('.rec-btn') as HTMLButtonElement,
     samplerPads: Array.from(mixer.querySelectorAll<HTMLButtonElement>('.smp')),
     samplerVol: mixer.querySelector('.sampler-vol') as HTMLInputElement,
     memMeter: header.querySelector('.mem-meter') as HTMLElement,
     crateList: footer.querySelector('.crate-list') as HTMLUListElement,
     crateCount: footer.querySelector('.crate-count') as HTMLElement,
+    crateQuery: footer.querySelector('.crate-q') as HTMLInputElement,
+    crateSort: footer.querySelector('.crate-sort') as HTMLSelectElement,
     midiDevices: footer.querySelector('.midi-devices') as HTMLElement,
     midiActions: footer.querySelector('.midi-actions') as HTMLElement,
     midiWizard: footer.querySelector('.midi-wizard') as HTMLButtonElement,

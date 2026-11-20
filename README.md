@@ -30,6 +30,16 @@ Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI
   trigger with click, `Shift+1…8`, or velocity-sensitive MIDI pads (K.O. II). Retrigger
   chokes the previous hit per slot, slots persist across restarts, dedicated SMP volume,
   and the bus runs straight to master (crossfader-bypassed, SP-6 style).
+- **Mix recording**: REC button / `V` records the master bus to a streaming 16-bit WAV in
+  `~/Music/vibedeck/` — chunks hit disk as they're produced, so an hour-long set costs no
+  RAM. Blocked (by SoundCloud terms) while streamed tracks are loaded.
+- **Beat jump**: grid-quantized ± jumps with a cycled size (1/2/4/8/16 beats) —
+  `[` / `]` on the focused deck, `\` to change size, or pads via `deckX.jumpBack/jumpFwd/jumpSize`.
+- **Crate search + sort**: live filter (name/key/BPM) and sort by name, BPM, Camelot key,
+  or recently analyzed.
+- **Memory**: stemmed decks now drop their redundant main-mix buffer (~106 MB freed per
+  5-min track) on top of the budget manager, LRU eviction, mip-pyramids and header meter
+  from earlier tiers — [docs/memory.md](docs/memory.md).
 - **Auto-gain**: tracks are loudness-analyzed on load (gated block-RMS, LUFS-approximate)
   and the channel trim is set to normalize them to −14 LUFS, clamped to the ±12 dB trim
   range. Persisted per track in the crate. Toggle: AUTO GAIN button or `C`; moving TRM
@@ -102,7 +112,19 @@ Without these, vibedeck still works: browser-side BPM estimation covers beatmatc
 | `Z` / `/` | Deck A/B headphone cue | | `X` | Split cue on/off |
 | `4`–`7` | Deck A loop rolls 1/2/4/8 | | `B` `N` `M` `'` | Deck B loop rolls 1/2/4/8 |
 | `T` / `Y` | Deck A/B loop latch mode | | `Shift`+`1`–`8` | Sampler pads |
-| wheel on waveform | zoom in/out | | dblclick filter | reset filter |
+| `[` / `]` | Beat jump back/fwd (focused deck) | | `\` | Cycle jump size |
+| `V` | Record mix to WAV | | wheel on waveform | zoom in/out |
+
+## Packaging
+
+```bash
+npm run dist        # → release/vibedeck-<version>-arm64.dmg
+```
+
+The DMG is unsigned (Gatekeeper will ask: right-click → Open the first time). The python
+sidecar is bundled via `extraResources` and resolved from `process.resourcesPath` when
+packaged. Install dev tools for stems/key analysis as usual (`pip install librosa
+soundfile demucs`) — they run from your system python, not the app bundle.
 
 ## Architecture
 

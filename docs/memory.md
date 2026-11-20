@@ -18,16 +18,20 @@ Decoded PCM costs **`sampleRate × channels × 4 bytes` per second**:
 
 Everything below exists to keep those numbers bounded and visible.
 
-## Current-state audit (what Tier 0 fixes)
+## Current-state audit (what has been fixed)
 
 1. **No accounting**: nothing knows how much decoded audio is alive. → fixed: `AudioMemory`.
 2. **Unbounded SoundCloud session cache**: every streamed track ever played this session
-   stays decoded. → fixed: cache entries register with the budget and evict LRU.
+   stayed decoded. → fixed: cache entries register with the budget and evict LRU.
 3. **O(peaks) waveform redraw at far zoom**: one flat peaks array scanned per pixel column;
    zoomed out, each column scans thousands of buckets at 60fps. → fixed: peak mip-pyramid,
    redraw is O(pixels) at any zoom.
 4. **Key-lock copy**: exactly one copy exists (channel `slice()` transferred into the engine)
    — already minimal, now counted in usage (approximation until Tier 1).
+5. **Redundant main-mix buffer on stemmed decks**: once stems are the playback source the
+   full mix was still resident. → fixed: `deck.releaseMainMix()` drops it when stems attach
+   (~106 MB freed per 5-min track; waveform peaks survive in the view, duration survives
+   via a stored fallback).
 
 ## Tier 0 — implemented now
 
@@ -57,10 +61,9 @@ engine's WASM/heap memory:
   dynamic range headroom above any club rig's noise floor — sonically a non-issue for DJ use.
 - With the off-the-shelf engine (see DSP appendix) the flow is:
   `decodeAudioData → copy→Int16 → addBuffers() → drop the AudioBuffer`.
-- Stems get the same treatment; additionally offer a **mono-stems option** (halve again —
-  stems exist to be filtered, not admired).
-- When stems are active the main-mix buffer is droppable entirely (playback uses stems),
-  taking a stemmed deck from 5× to 2.5× (int16) or 1.25× (int16+mono) of stereo size.
+- **Main-mix drop with stems active: shipped** (see audit item 5). The remaining Tier-1
+  work is the int16 store itself (halves every remaining buffer) and a mono-stems option
+  (halves stems again — they exist to be filtered, not admired).
 
 ## Tier 2 — bounded RAM for unbounded files (windowed paging)
 

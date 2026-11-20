@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld('vibedeck', {
       result?: unknown
       error?: string
     }>,
+  recStart: () => ipcRenderer.invoke('rec:start') as Promise<{ ok: boolean; path?: string; error?: string }>,
+  recWrite: (chunk: Uint8Array) => ipcRenderer.invoke('rec:write', chunk) as Promise<{ ok: boolean }>,
+  recFinish: (frames: number, sampleRate: number) =>
+    ipcRenderer.invoke('rec:finish', frames, sampleRate) as Promise<{ ok: boolean; path: string | null }>,
   scStatus: () =>
     ipcRenderer.invoke('sc:status') as Promise<{ configured: boolean; loggedIn: boolean; username?: string }>,
   scLogin: () => ipcRenderer.invoke('sc:login') as Promise<{ ok: boolean; error?: string; username?: string }>,

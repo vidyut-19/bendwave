@@ -83,6 +83,8 @@ export class Deck {
   activeLoop: { start: number; len: number; beats: number } | null = null
   /** when true, loop pads latch instead of momentary rolls */
   loopLatch = false
+  /** current beat-jump size in beats (cycles 1/2/4/8/16) */
+  jumpBeats = 4
   private loopNext: { sources: AudioBufferSourceNode[]; atTime: number } | null = null
 
   private preGain: GainNode
@@ -118,16 +120,19 @@ export class Deck {
   }
 
   get hasAudio(): boolean {
-    return this.buffer !== null
+    return this.buffer !== null || this.stemLayers.length > 0
   }
 
   get duration(): number {
-    return this.buffer?.duration ?? 0
+    return this.buffer?.duration ?? this.bufferDuration
   }
 
   get audioBuffer(): AudioBuffer | null {
     return this.buffer
   }
+
+  /** survives releaseMainMix() so duration/seek math keeps working with stems only */
+  private bufferDuration = 0
 
   get effRate(): number {
     return Math.max(0.05, this.tempoRate * (1 + this.bendDelta))
@@ -203,6 +208,7 @@ export class Deck {
     this.cueHolding = false
     this.track = track
     this.buffer = buffer
+    this.bufferDuration = buffer.duration
     this.setStemBuffers(stemBuffers)
     if (!Array.isArray(track.hotCues) || track.hotCues.length !== 4) {
       track.hotCues = [null, null, null, null]
@@ -235,6 +241,15 @@ export class Deck {
   setStemGain(i: number, v: number): void {
     const l = this.stemLayers[i]
     if (l) l.gain.gain.value = v
+  }
+
+  /**
+   * Memory Tier-1 piece: once stems are the playback source, the full-mix
+   * AudioBuffer is redundant — release it (~106 MB per 5-min track). Duration
+   * survives via bufferDuration; waveform peaks live in the WaveformView.
+   */
+  releaseMainMix(): void {
+    if (this.stemLayers.length > 0) this.buffer = null
   }
 
   play(): void {
@@ -378,6 +393,23 @@ export class Deck {
 
   exitLoop(): void {
     this.clearLoop(true)
+  }
+
+  /** cycle beat-jump size 1 → 2 → 4 → 8 → 16 */
+  cycleJumpSize(): number {
+    const sizes = [1, 2, 4, 8, 16]
+    this.jumpBeats = sizes[(sizes.indexOf(this.jumpBeats) + 1) % sizes.length]
+    return this.jumpBeats
+  }
+
+  /** grid-quantized jump by ±jumpBeats (dir = -1 back, +1 forward) */
+  beatJump(dir: number): void {
+    const grid = this.track?.grid
+    if (!grid || grid.bpm <= 0 || !this.hasAudio) return
+    const beat = 60 / grid.bpm
+    const k = Math.round((this.position - grid.offset) / beat)
+    const target = Math.max(0, grid.offset + (k + dir * this.jumpBeats) * beat)
+    this.seek(target)
   }
 
   private clearLoop(restart: boolean): void {

@@ -13,6 +13,7 @@ import { delayFracLabel } from './engine/fx'
 import { AudioMemory } from './engine/memory'
 import { computeLoudness, autoGainDb, TARGET_LUFS } from './engine/analysis'
 import { Sampler } from './engine/sampler'
+import { Recorder } from './engine/recorder'
 import type { MidiBinding } from './midi/midi'
 
 const AUDIO_EXT = /\.(wav|aiff?|flac|mp3|m4a|aac|ogg)$/i
@@ -35,6 +36,18 @@ let autoGain = localStorage.getItem('vibedeck.autogain') !== 'off'
 // one-shot sampler (kicks/claps/tones) — straight to master, crossfader-bypassed
 const sampler = new Sampler(engine.ctx, engine.master)
 const SAMPLER_KEY = 'vibedeck.sampler.v1'
+
+// master-bus recorder (streaming WAV to disk)
+const recorder = new Recorder(engine.ctx)
+
+function stopRecording(reason?: string): void {
+  if (!recorder.recording) return
+  void (async () => {
+    const p = await recorder.stop()
+    if (p) log(`recording saved → ${p}`)
+    if (reason) log(reason)
+  })()
+}
 
 const waveforms = new Map<string, WaveformView>()
 
@@ -202,8 +215,9 @@ async function attachStems(deck: Deck, track: Track): Promise<void> {
     const bufs = await loadStemBuffers(track)
     if (deck.track?.id !== track.id) return
     deck.setStemBuffers(bufs)
+    deck.releaseMainMix() // stems replace the mix: free ~106 MB per 5-min track
     updateStemsUI(deck)
-    audioMem.track(track.id, track.name, (track.pcmBytes ?? 0) + AudioMemory.bytesOf(...bufs))
+    audioMem.track(track.id, track.name, AudioMemory.bytesOf(...bufs))
   } catch (e) {
     log(`stem load failed: ${String(e)}`)
   }
@@ -233,6 +247,9 @@ function refFromTrack(t: Track): StreamTrackRef {
 }
 
 async function loadTrackIntoDeck(track: Track, buffer?: AudioBuffer): Promise<void> {
+  if (recorder.recording && track.source === 'soundcloud') {
+    stopRecording('recording stopped — a streamed track was loaded (SoundCloud terms)')
+  }
   const deck = !engine.deckA.hasAudio
     ? engine.deckA
     : !engine.deckB.hasAudio
@@ -398,6 +415,19 @@ function actionPress(action: string): void {
       case 'loopExit':
         deck.exitLoop()
         break
+      case 'jumpBack':
+        releaseSyncIfSlave(deck)
+        deck.beatJump(-1)
+        break
+      case 'jumpFwd':
+        releaseSyncIfSlave(deck)
+        deck.beatJump(1)
+        break
+      case 'jumpSize': {
+        const s = deck.cycleJumpSize()
+        log(`deck ${deck.id} jump size = ${s} beat${s > 1 ? 's' : ''}`)
+        break
+      }
       case 'bendDown':
         releaseSyncIfSlave(deck)
         deck.bend(-0.06)
@@ -425,6 +455,23 @@ function actionPress(action: string): void {
         log('split cue ON — master → ch 1/2, headphone cue → ch 3/4. create a macOS Aggregate Device (speakers + headphones) and select it as the sound output')
       } else {
         log('split cue OFF — everything on the default stereo output')
+      }
+      break
+    }
+    case 'mix.record': {
+      if (recorder.recording) {
+        stopRecording()
+      } else {
+        const scLoaded = [engine.deckA, engine.deckB].some((d) => d.track?.source === 'soundcloud')
+        if (scLoaded) {
+          log('recording blocked — SoundCloud terms forbid recording streamed audio')
+          break
+        }
+        void (async () => {
+          const r = await recorder.start(engine.master)
+          if (r.ok && r.path) log(`recording → ${r.path}`)
+          else log(`recording failed: ${r.error ?? 'unknown'}`)
+        })()
       }
       break
     }
@@ -491,7 +538,8 @@ const KEY_ACTIONS: Record<string, string> = {
   Quote: 'deckB.loop8',
   KeyT: 'deckA.loopLatch',
   KeyY: 'deckB.loopLatch',
-  KeyC: 'mix.autoGain'
+  KeyC: 'mix.autoGain',
+  KeyV: 'mix.record'
 }
 
 const HOTCUE_KEYS: Record<string, ['A' | 'B', number]> = {
@@ -506,6 +554,19 @@ const HOTCUE_KEYS: Record<string, ['A' | 'B', number]> = {
 }
 
 document.addEventListener('keydown', (e) => {
+  // beat jump on the focused deck: [ back, ] forward, \ cycles size
+  if (e.code === 'BracketLeft' || e.code === 'BracketRight' || e.code === 'Backslash') {
+    e.preventDefault()
+    const deck = focusedDeck === 'B' ? engine.deckB : engine.deckA
+    if (e.code === 'Backslash') {
+      if (e.repeat) return
+      const s = deck.cycleJumpSize()
+      log(`deck ${deck.id} jump size = ${s} beat${s > 1 ? 's' : ''}`)
+    } else {
+      deck.beatJump(e.code === 'BracketLeft' ? -1 : 1)
+    }
+    return
+  }
   if (e.shiftKey && /^Digit[1-8]$/.test(e.code)) {
     e.preventDefault()
     if (e.repeat) return
@@ -656,7 +717,8 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
 function updateDeckUI(deck: Deck): void {
   const r = deckRefs(deck)
   r.name.textContent = deck.track?.name ?? '— empty —'
-  wfFor(deck).setBuffer(deck.audioBuffer)
+  // after stems attach, the deck drops its main-mix buffer — keep the rendered peaks
+  if (deck.audioBuffer) wfFor(deck).setBuffer(deck.audioBuffer)
   if (document.activeElement !== r.rate) {
     r.rate.value = String(((deck.tempoRate - 1) * 100).toFixed(2))
     r.rateVal.textContent = pct(deck.tempoRate)
@@ -669,9 +731,37 @@ function updateStemsUI(deck: Deck): void {
   r.stemSliders.forEach((s) => (s.value = '1'))
 }
 
+function camelotOrder(c?: string): number {
+  const m = /^(\d+)([AB])$/.exec(c ?? '')
+  return m ? Number(m[1]) * 2 + (m[2] === 'B' ? 1 : 0) : 9999
+}
+
 function renderCrate(): void {
   refs.crateList.innerHTML = ''
-  const tracks = [...crate.tracks].sort((a, b) => a.name.localeCompare(b.name))
+  const q = refs.crateQuery.value.trim().toLowerCase()
+  const sort = refs.crateSort.value
+  let tracks = [...crate.tracks]
+  if (q) {
+    tracks = tracks.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        (t.key ?? '').toLowerCase().includes(q) ||
+        (t.camelot ?? '').toLowerCase().includes(q) ||
+        String(t.grid?.bpm ?? '').includes(q)
+    )
+  }
+  tracks.sort((a, b) => {
+    switch (sort) {
+      case 'bpm':
+        return (a.grid?.bpm ?? 9999) - (b.grid?.bpm ?? 9999)
+      case 'key':
+        return camelotOrder(a.camelot) - camelotOrder(b.camelot)
+      case 'recent':
+        return (b.analyzedAt ?? '').localeCompare(a.analyzedAt ?? '')
+      default:
+        return a.name.localeCompare(b.name)
+    }
+  })
   refs.crateCount.textContent = tracks.length ? `(${tracks.length})` : ''
   for (const t of tracks) {
     const li = document.createElement('li')
@@ -691,6 +781,12 @@ function renderCrate(): void {
     refs.crateList.append(li)
   }
 }
+
+refs.crateQuery.addEventListener('input', renderCrate)
+refs.crateSort.addEventListener('change', () => {
+  localStorage.setItem('vibedeck.crate-sort', refs.crateSort.value)
+  renderCrate()
+})
 
 refs.xfader.addEventListener('input', () => engine.mixer.setCrossfade(refs.xfader.valueAsNumber))
 refs.master.addEventListener('input', () => {
@@ -822,6 +918,7 @@ function tick(): void {
     r.cueMixBtn.classList.toggle('active', engine.isCueMix(deck.id))
     r.fracBtn.textContent = delayFracLabel(deck.fx.delayFrac)
     r.loopLatchBtn.classList.toggle('active', deck.loopLatch)
+    r.jumpSizeBtn.textContent = String(deck.jumpBeats)
     const LOOP_SIZES = [1, 2, 4, 8]
     for (let i = 0; i < r.loopBtns.length; i++) {
       r.loopBtns[i].classList.toggle('active', !!deck.activeLoop && deck.activeLoop.beats === LOOP_SIZES[i])
@@ -861,6 +958,10 @@ function tick(): void {
   if (!anyPlaying && now - lastIdleDraw > 500) lastIdleDraw = now
   refs.splitCueBtn.classList.toggle('active', engine.splitCue)
   refs.autoGainBtn.classList.toggle('active', autoGain)
+  refs.recBtn.classList.toggle('active', recorder.recording)
+  refs.recBtn.textContent = recorder.recording
+    ? `${Math.floor(recorder.elapsed / 60)}:${String(Math.floor(recorder.elapsed % 60)).padStart(2, '0')}`
+    : 'REC'
   requestAnimationFrame(tick)
 }
 
@@ -877,6 +978,7 @@ const ACTION_IDS = [
   'deckA.filter', 'deckA.volume', 'deckA.delayWet', 'deckA.delayFb', 'deckA.trim',
   'deckA.tempo', 'deckA.eqLow', 'deckA.eqMid', 'deckA.eqHigh',
   'deckA.loop1', 'deckA.loop2', 'deckA.loop4', 'deckA.loop8', 'deckA.loopLatch', 'deckA.loopExit',
+  'deckA.jumpBack', 'deckA.jumpFwd', 'deckA.jumpSize',
   'deckB.play', 'deckB.cue', 'deckB.setCue', 'deckB.sync', 'deckB.keylock',
   'deckB.bendDown', 'deckB.bendUp', 'deckB.cueMix',
   'deckB.hotcue1', 'deckB.hotcue2', 'deckB.hotcue3', 'deckB.hotcue4',
@@ -885,9 +987,11 @@ const ACTION_IDS = [
   'deckB.filter', 'deckB.volume', 'deckB.delayWet', 'deckB.delayFb', 'deckB.trim',
   'deckB.tempo', 'deckB.eqLow', 'deckB.eqMid', 'deckB.eqHigh',
   'deckB.loop1', 'deckB.loop2', 'deckB.loop4', 'deckB.loop8', 'deckB.loopLatch', 'deckB.loopExit',
+  'deckB.jumpBack', 'deckB.jumpFwd', 'deckB.jumpSize',
   'sampler.pad1', 'sampler.pad2', 'sampler.pad3', 'sampler.pad4',
   'sampler.pad5', 'sampler.pad6', 'sampler.pad7', 'sampler.pad8', 'sampler.volume',
-  'mix.crossLeft', 'mix.crossRight', 'mix.crossCenter', 'mix.crossfade', 'mix.splitCue', 'mix.autoGain'
+  'mix.crossLeft', 'mix.crossRight', 'mix.crossCenter', 'mix.crossfade', 'mix.splitCue', 'mix.autoGain',
+  'mix.record'
 ]
 
 function renderMidiPanel(): void {
@@ -1192,6 +1296,8 @@ async function addStreamTrack(ref: StreamTrackRef): Promise<void> {
 
 void (async () => {
   await crate.load()
+  const savedSort = localStorage.getItem('vibedeck.crate-sort')
+  if (savedSort) refs.crateSort.value = savedSort
   renderCrate()
   wireDeck(engine.deckA, refs.deckA)
   wireDeck(engine.deckB, refs.deckB)

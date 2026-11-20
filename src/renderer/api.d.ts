@@ -12,6 +12,9 @@ declare global {
       p: string,
       opts?: { stems?: boolean; stemsDir?: string; python?: string }
     ): Promise<{ ok: boolean; result?: unknown; error?: string }>
+    recStart(): Promise<{ ok: boolean; path?: string; error?: string }>
+    recWrite(chunk: Uint8Array): Promise<{ ok: boolean }>
+    recFinish(frames: number, sampleRate: number): Promise<{ ok: boolean; path: string | null }>
     scStatus(): Promise<{ configured: boolean; loggedIn: boolean; username?: string }>
     scLogin(): Promise<{ ok: boolean; error?: string; username?: string }>
     scLogout(): Promise<{ ok: boolean }>

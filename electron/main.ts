@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
 import { spawn } from 'node:child_process'
+import type { FileHandle } from 'node:fs/promises'
 import { registerSoundCloud } from './soundcloud'
 
 const dev = process.argv.includes('--dev')
@@ -85,13 +86,79 @@ interface AnalyzeOptions {
   python?: string
 }
 
+/** streaming 16-bit stereo WAV header */
+function wavHeader(dataLen: number, sampleRate: number, channels = 2, bits = 16): Buffer {
+  const h = Buffer.alloc(44)
+  h.write('RIFF', 0)
+  h.writeUInt32LE(36 + dataLen, 4)
+  h.write('WAVE', 8)
+  h.write('fmt ', 12)
+  h.writeUInt32LE(16, 16)
+  h.writeUInt16LE(1, 20)
+  h.writeUInt16LE(channels, 22)
+  h.writeUInt32LE(sampleRate, 24)
+  h.writeUInt32LE((sampleRate * channels * bits) / 8, 28)
+  h.writeUInt16LE((channels * bits) / 8, 32)
+  h.writeUInt16LE(bits, 34)
+  h.write('data', 36)
+  h.writeUInt32LE(dataLen, 40)
+  return h
+}
+
+let recFd: FileHandle | null = null
+let recPath = ''
+let recPos = 0
+
+ipcMain.handle('rec:start', async () => {
+  try {
+    if (recFd) return { ok: false, error: 'already recording' }
+    const dir = path.join(app.getPath('music'), 'vibedeck')
+    await fs.mkdir(dir, { recursive: true })
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    recPath = path.join(dir, `vibedeck-set-${ts}.wav`)
+    recFd = await fs.open(recPath, 'w')
+    await recFd.write(wavHeader(0, 48000), 0) // placeholder, patched on finish
+    recPos = 44
+    return { ok: true, path: recPath }
+  } catch (e) {
+    recFd = null
+    return { ok: false, error: String(e) }
+  }
+})
+
+ipcMain.handle('rec:write', async (_e, chunk: Uint8Array) => {
+  if (!recFd) return { ok: false }
+  try {
+    await recFd.write(Buffer.from(chunk), recPos)
+    recPos += chunk.byteLength
+    return { ok: true }
+  } catch {
+    return { ok: false }
+  }
+})
+
+ipcMain.handle('rec:finish', async (_e, frames: number, sampleRate: number) => {
+  const fd = recFd
+  recFd = null
+  if (!fd) return { ok: false, path: null }
+  try {
+    await fd.write(wavHeader(Math.max(0, frames) * 4, sampleRate || 48000), 0)
+  } catch {
+    /* keep the data even if the header patch fails */
+  }
+  await fd.close()
+  return { ok: true, path: recPath }
+})
+
 /**
  * Runs tools/analyze.py (librosa bpm/key + optional demucs stems) and returns
  * its JSON result. Fails soft: { ok: false, error } so the renderer can fall
  * back to the in-browser beatgrid estimator.
  */
 ipcMain.handle('ingest:analyze', async (_e, filePath: string, opts: AnalyzeOptions = {}) => {
-  const script = path.join(app.getAppPath(), 'tools', 'analyze.py')
+  const script = app.isPackaged
+    ? path.join(process.resourcesPath, 'tools', 'analyze.py')
+    : path.join(app.getAppPath(), 'tools', 'analyze.py')
   const args = [script, filePath]
   if (opts.stems) {
     args.push('--stems', '--stems-dir', opts.stemsDir ?? path.join(app.getPath('userData'), 'stems'))
