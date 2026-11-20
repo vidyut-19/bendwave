@@ -1,4 +1,4 @@
-import type { Deck } from './deck'
+import { Deck } from './deck'
 
 /** Equal-power crossfader between the two deck channels. */
 export class Mixer {
