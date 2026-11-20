@@ -1,4 +1,5 @@
 import { KeylockNode } from './keylock'
+import { FXUnit } from './fx'
 
 export interface BeatGrid {
   /** beats per minute */
@@ -78,6 +79,8 @@ export class Deck {
   private low: BiquadFilterNode
   private mid: BiquadFilterNode
   private high: BiquadFilterNode
+  /** filter + delay + reverb insert, after EQ */
+  readonly fx: FXUnit
   readonly output: GainNode
 
   constructor(id: 'A' | 'B', ctx: AudioContext, dest: AudioNode) {
@@ -94,11 +97,13 @@ export class Deck {
     this.high = ctx.createBiquadFilter()
     this.high.type = 'highshelf'
     this.high.frequency.value = 4000
+    this.fx = new FXUnit(ctx)
     this.output = ctx.createGain()
     this.preGain.connect(this.low)
     this.low.connect(this.mid)
     this.mid.connect(this.high)
-    this.high.connect(this.output)
+    this.high.connect(this.fx.input)
+    this.fx.output.connect(this.output)
     this.output.connect(dest)
   }
 
@@ -135,6 +140,16 @@ export class Deck {
     this.low.gain.value = lowDb
     this.mid.gain.value = midDb
     this.high.gain.value = highDb
+  }
+
+  /** DJ filter: -1 = full lowpass, +1 = full highpass */
+  setFilter(v: number): void {
+    this.fx.setFilter(v)
+  }
+
+  /** channel volume fader (post-FX, pre-crossfader) */
+  setVolume(v: number): void {
+    this.output.gain.value = Math.min(1.2, Math.max(0, v))
   }
 
   async load(track: Track, buffer: AudioBuffer, stemBuffers: AudioBuffer[] = []): Promise<void> {

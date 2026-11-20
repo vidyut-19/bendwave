@@ -17,6 +17,15 @@ Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI
 - **Key lock (experimental)**: WSOLA time-stretcher in an AudioWorklet — change tempo,
   keep pitch. Full-mix decks only (not with stems); ~70ms lookahead; honest at small
   pitch ranges, warbly at extremes.
+- **FX rack per deck**: DJ filter (LP/HP combo knob, double-click to reset), beat-synced
+  delay with wet/feedback controls and switchable fraction (1/4, 1/2, 3/4, 1/1), reverb,
+  and a momentary **echo out** (`G`/`H` — hold for the transition, release to let it ring).
+- **Channel volume faders** per deck (post-FX, pre-crossfader).
+- **Split-cue headphone monitoring**: per-deck CUE buttons + SPLIT CUE mode routes master
+  on channels 1/2 and the cue bus on 3/4 — pair with a macOS Aggregate Device
+  (speakers + headphones) to pre-listen like a real mixer.
+- **K.O. II preset**: documented pad map (groups A–D, notes 36–83) loaded with one click,
+  plus an auto-map wizard for faders/knobs — see [docs/ko2-mapping.md](docs/ko2-mapping.md).
 - **Drop-and-play**: drag WAV/FLAC/MP3/AIFF/M4A anywhere, or use "add tracks…".
 - **Instant BPM**: an in-browser onset/autocorrelation beatgrid estimator runs the moment a
   track loads — no dependencies required.
@@ -63,7 +72,9 @@ Without these, vibedeck still works: browser-side BPM estimation covers beatmatc
 | `3` | Deck A key lock | | `8` | Deck B key lock |
 | `A` `S` `D` `F` | Deck A hot cues 1–4 | | `J` `K` `L` `;` | Deck B hot cues 1–4 |
 | `Shift` + hotcue key | Set that hot cue | | `,` / `.` | Crossfader left/right |
-| `Space` | Crossfader center | | wheel on waveform | zoom in/out |
+| `G` / `H` | Deck A/B echo out (hold) | | `Space` | Crossfader center |
+| `Z` / `/` | Deck A/B headphone cue | | `X` | Split cue on/off |
+| wheel on waveform | zoom in/out | | dblclick filter | reset filter |
 
 ## Architecture
 

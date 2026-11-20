@@ -1,17 +1,26 @@
 export type MidiBinding = { type: 'note' | 'cc'; channel: number; control: number }
 export type MidiMessage = { type: 'note' | 'cc'; channel: number; control: number; value: number }
 
+interface SequenceHooks {
+  onStep?: (action: string, index: number, total: number) => void
+  onDone?: () => void
+  onCancel?: () => void
+}
+
 const STORAGE_KEY = 'vibedeck.midi.bindings.v1'
 
 /**
  * MIDI-learn router: bind any action id to an incoming note or CC, persist the
  * map to localStorage, and dispatch incoming messages as action events.
  * Works with any class-compliant controller (K.O. II, pads, knobs, faders).
+ * Also supports presets (e.g. the documented K.O. II pad map) and a guided
+ * auto-map wizard that walks a list of actions in order.
  */
 export class MidiRouter {
   private access: MIDIAccess | null = null
   bindings = new Map<string, MidiBinding>()
   learning: string | null = null
+  private seq: { actions: string[]; total: number; hooks: SequenceHooks } | null = null
 
   onAction?: (actionId: string, msg: MidiMessage) => void
   onDevices?: (names: string[]) => void
@@ -41,6 +50,7 @@ export class MidiRouter {
   }
 
   startLearn(actionId: string | null): void {
+    this.cancelSequence(false)
     this.learning = actionId
     this.onBindingsChanged?.()
   }
@@ -51,8 +61,53 @@ export class MidiRouter {
     this.onBindingsChanged?.()
   }
 
+  /** Replace the whole binding set (presets). */
+  applyPreset(preset: Record<string, MidiBinding>): void {
+    this.bindings.clear()
+    for (const [k, v] of Object.entries(preset)) {
+      if (v && (v.type === 'note' || v.type === 'cc')) this.bindings.set(k, v)
+    }
+    this.learning = null
+    this.cancelSequence(false)
+    this.persist()
+    this.onBindingsChanged?.()
+  }
+
+  /**
+   * Guided auto-map: walk `actions` in order, binding each to whatever control
+   * is touched next. Pass null to cancel.
+   */
+  startSequence(actions: string[] | null, hooks: SequenceHooks = {}): void {
+    if (this.seq) this.cancelSequence(true)
+    this.learning = null
+    if (!actions || actions.length === 0) return
+    this.seq = { actions: [...actions], total: actions.length, hooks }
+    this.emitStep()
+    this.onBindingsChanged?.()
+  }
+
+  private cancelSequence(notify: boolean): void {
+    if (!this.seq) return
+    const hooks = this.seq.hooks
+    this.seq = null
+    if (notify) {
+      hooks.onCancel?.()
+      this.onBindingsChanged?.()
+    }
+  }
+
+  private emitStep(): void {
+    if (!this.seq) return
+    const done = this.seq.total - this.seq.actions.length
+    this.seq.hooks.onStep?.(this.seq.actions[0], done + 1, this.seq.total)
+  }
+
   bindingFor(actionId: string): MidiBinding | undefined {
     return this.bindings.get(actionId)
+  }
+
+  get isSequencing(): boolean {
+    return this.seq !== null
   }
 
   private wire(): void {
@@ -78,6 +133,25 @@ export class MidiRouter {
     if (!data) return
     const msg = this.parse(data)
     if (!msg) return
+
+    if (this.seq) {
+      const actionId = this.seq.actions.shift() as string
+      this.bindings.set(actionId, {
+        type: msg.type,
+        channel: msg.channel,
+        control: msg.control
+      })
+      this.persist()
+      if (this.seq.actions.length === 0) {
+        const hooks = this.seq.hooks
+        this.seq = null
+        hooks.onDone?.()
+      } else {
+        this.emitStep()
+      }
+      this.onBindingsChanged?.()
+      return
+    }
 
     if (this.learning) {
       this.bindings.set(this.learning, {

@@ -29,12 +29,25 @@ export class Mixer {
   }
 }
 
+/**
+ * Two decks, a mixer, and a headphone-cue path.
+ *
+ * Split cue: when enabled, output is routed through a 4-channel merger —
+ * master on channels 1/2, headphone cue bus on channels 3/4. Pair it with a
+ * macOS Aggregate Device (speakers + headphones) set as the system output so
+ * the context actually exposes four channels.
+ */
 export class DJEngine {
   readonly ctx: AudioContext
   readonly master: GainNode
   readonly mixer: Mixer
   readonly deckA: Deck
   readonly deckB: Deck
+  readonly cueBus: GainNode
+  private cueA: GainNode
+  private cueB: GainNode
+  private merger: ChannelMergerNode | null = null
+  splitCue = false
 
   constructor() {
     this.ctx = new AudioContext({ latencyHint: 'interactive' })
@@ -44,6 +57,61 @@ export class DJEngine {
     this.mixer = new Mixer(this.ctx, this.master)
     this.deckA = new Deck('A', this.ctx, this.mixer.inputA)
     this.deckB = new Deck('B', this.ctx, this.mixer.inputB)
+
+    // headphone cue taps each deck post-FX, pre-crossfader
+    this.cueBus = this.ctx.createGain()
+    this.cueA = this.ctx.createGain()
+    this.cueA.gain.value = 0
+    this.cueB = this.ctx.createGain()
+    this.cueB.gain.value = 0
+    this.deckA.output.connect(this.cueA)
+    this.deckB.output.connect(this.cueB)
+    this.cueA.connect(this.cueBus)
+    this.cueB.connect(this.cueBus)
+  }
+
+  setCueMix(id: 'A' | 'B', on: boolean): void {
+    ;(id === 'A' ? this.cueA : this.cueB).gain.value = on ? 1 : 0
+  }
+
+  isCueMix(id: 'A' | 'B'): boolean {
+    return (id === 'A' ? this.cueA : this.cueB).gain.value > 0.5
+  }
+
+  setSplitCue(on: boolean): boolean {
+    if (on === this.splitCue) return this.splitCue
+    if (on) {
+      try {
+        this.master.disconnect(this.ctx.destination)
+      } catch {
+        /* not connected */
+      }
+      const m = this.ctx.createChannelMerger(4)
+      this.master.connect(m, 0, 0)
+      this.master.connect(m, 0, 1)
+      this.cueBus.connect(m, 0, 2)
+      this.cueBus.connect(m, 0, 3)
+      m.connect(this.ctx.destination)
+      this.merger = m
+      this.splitCue = true
+    } else {
+      if (this.merger) {
+        try {
+          this.merger.disconnect()
+        } catch {
+          /* noop */
+        }
+        this.merger = null
+      }
+      try {
+        this.master.disconnect(this.ctx.destination)
+      } catch {
+        /* not connected */
+      }
+      this.master.connect(this.ctx.destination)
+      this.splitCue = false
+    }
+    return this.splitCue
   }
 
   resume(): void {

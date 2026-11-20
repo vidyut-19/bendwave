@@ -107,6 +107,21 @@ main {
 .stems-row[hidden] { display: none; }
 .stem { display: flex; flex-direction: column; gap: 2px; font-size: 10px; color: var(--dim); }
 
+.fx-row, .fx-params { gap: 8px; }
+.fx-lab { display: flex; align-items: center; gap: 5px; color: var(--dim); font-size: 11px; }
+.fx-lab input { width: 72px; }
+.fx-row input { width: 96px; }
+.t-btn.fx { padding: 5px 8px; font-size: 12px; flex: 0 0 auto; }
+.t-btn.fx.delay.active { background: #a78bfa; border-color: #a78bfa; color: #14082a; }
+.t-btn.fx.reverb.active { background: #22d3ee; border-color: #22d3ee; color: #052024; }
+.t-btn.fx.echo.active { background: #fb7185; border-color: #fb7185; color: #2a0510; }
+.t-btn.fx.cuemix.active { background: var(--good); border-color: var(--good); color: #08130b; }
+.t-btn.split-cue.active { background: var(--good); border-color: var(--good); color: #08130b; }
+
+.midi-tools { display: flex; gap: 6px; margin-bottom: 6px; }
+.midi-tools button { flex: 1; font-size: 11px; padding: 3px 4px; }
+.midi-wizard-status { color: var(--accent-b); font-size: 11px; margin-bottom: 6px; min-height: 1em; }
+
 .transport { display: flex; gap: 6px; margin-top: auto; }
 .t-btn { flex: 1; padding: 8px 6px; }
 .t-btn.sync { border-color: var(--accent-b); }

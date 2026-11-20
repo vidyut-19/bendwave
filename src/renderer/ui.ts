@@ -17,6 +17,15 @@ export interface DeckRefs {
   eqLow: HTMLInputElement
   eqMid: HTMLInputElement
   eqHigh: HTMLInputElement
+  filter: HTMLInputElement
+  wet: HTMLInputElement
+  fb: HTMLInputElement
+  vol: HTMLInputElement
+  delayBtn: HTMLButtonElement
+  fracBtn: HTMLButtonElement
+  reverbBtn: HTMLButtonElement
+  echoBtn: HTMLButtonElement
+  cueMixBtn: HTMLButtonElement
 }
 
 export interface AppRefs {
@@ -24,10 +33,14 @@ export interface AppRefs {
   deckB: DeckRefs
   xfader: HTMLInputElement
   master: HTMLInputElement
+  splitCueBtn: HTMLButtonElement
   crateList: HTMLUListElement
   crateCount: HTMLElement
   midiDevices: HTMLElement
   midiActions: HTMLElement
+  midiWizard: HTMLButtonElement
+  midiKo2: HTMLButtonElement
+  midiWizardStatus: HTMLElement
   streamStatus: HTMLElement
   scConnect: HTMLButtonElement
   scQuery: HTMLInputElement
@@ -54,6 +67,19 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
       mid <input class="eq eq-mid" type="range" min="-26" max="6" step="0.5" value="0" />
       high <input class="eq eq-high" type="range" min="-26" max="6" step="0.5" value="0" />
     </label>
+  </div>
+  <div class="row fx-row">
+    <label class="fx-lab">FLT <input class="filter" type="range" min="-1" max="1" step="0.01" value="0" title="double-click to reset" /></label>
+    <button class="t-btn fx delay" data-act="deck${id}.delay">DLY</button>
+    <button class="t-btn fx frac" data-act="deck${id}.delayFrac">1/2</button>
+    <button class="t-btn fx reverb" data-act="deck${id}.reverb">VRB</button>
+    <button class="t-btn fx echo" data-act="deck${id}.echoOut">ECHO</button>
+  </div>
+  <div class="row fx-params">
+    <label class="fx-lab">WET <input class="wet" type="range" min="0" max="1" step="0.01" value="0.55" /></label>
+    <label class="fx-lab">FB <input class="fb" type="range" min="0" max="0.9" step="0.01" value="0.5" /></label>
+    <label class="fx-lab">VOL <input class="vol" type="range" min="0" max="1" step="0.01" value="1" /></label>
+    <button class="t-btn fx cuemix" data-act="deck${id}.cueMix" title="headphone cue (split-cue mode)">CUE</button>
   </div>
   <div class="stems-row" hidden>
     <div class="stem"><span>DRUMS</span><input type="range" min="0" max="1" step="0.01" value="1" /></div>
@@ -101,7 +127,16 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
     stemSliders: Array.from(root.querySelectorAll<HTMLInputElement>('.stem input')),
     eqLow: q('.eq-low'),
     eqMid: q('.eq-mid'),
-    eqHigh: q('.eq-high')
+    eqHigh: q('.eq-high'),
+    filter: q('.filter'),
+    wet: q('.wet'),
+    fb: q('.fb'),
+    vol: q('.vol'),
+    delayBtn: q('.delay'),
+    fracBtn: q('.frac'),
+    reverbBtn: q('.reverb'),
+    echoBtn: q('.echo'),
+    cueMixBtn: q('.cuemix')
   }
 }
 
@@ -124,6 +159,7 @@ export function buildApp(root: HTMLElement): AppRefs {
   mixer.innerHTML = `
     <div class="xf-row"><span>A</span><input class="xfader" type="range" min="0" max="1" step="0.01" value="0.5" /><span>B</span></div>
     <button class="t-btn xf-center" data-act="mix.crossCenter">CENTER</button>
+    <button class="t-btn split-cue" data-act="mix.splitCue" title="master on ch 1/2, headphone cue on ch 3/4 (use an aggregate audio device)">SPLIT CUE</button>
     <div class="row"><span>MASTER</span><input class="master" type="range" min="0" max="1" step="0.01" value="0.85" style="flex:1" /></div>`
 
   main.append(deckA.root, mixer, deckB.root)
@@ -142,6 +178,11 @@ export function buildApp(root: HTMLElement): AppRefs {
     </section>
     <section class="midi-panel">
       <div class="panel-title">MIDI <span class="midi-devices"></span></div>
+      <div class="midi-tools">
+        <button class="midi-wizard">auto-map wizard</button>
+        <button class="midi-ko2">load K.O. II preset</button>
+      </div>
+      <div class="midi-wizard-status"></div>
       <div class="midi-actions"></div>
     </section>
     <section class="log">
@@ -156,10 +197,14 @@ export function buildApp(root: HTMLElement): AppRefs {
     deckB,
     xfader: mixer.querySelector('.xfader') as HTMLInputElement,
     master: mixer.querySelector('.master') as HTMLInputElement,
+    splitCueBtn: mixer.querySelector('.split-cue') as HTMLButtonElement,
     crateList: footer.querySelector('.crate-list') as HTMLUListElement,
     crateCount: footer.querySelector('.crate-count') as HTMLElement,
     midiDevices: footer.querySelector('.midi-devices') as HTMLElement,
     midiActions: footer.querySelector('.midi-actions') as HTMLElement,
+    midiWizard: footer.querySelector('.midi-wizard') as HTMLButtonElement,
+    midiKo2: footer.querySelector('.midi-ko2') as HTMLButtonElement,
+    midiWizardStatus: footer.querySelector('.midi-wizard-status') as HTMLElement,
     streamStatus: footer.querySelector('.stream-status') as HTMLElement,
     scConnect: footer.querySelector('.sc-connect') as HTMLButtonElement,
     scQuery: footer.querySelector('.sc-q') as HTMLInputElement,

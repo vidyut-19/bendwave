@@ -9,6 +9,8 @@ import { MidiRouter } from './midi/midi'
 import { buildApp, type AppRefs, type DeckRefs } from './ui'
 import { SoundCloudProvider } from './sources/soundcloud'
 import { registerProvider, type StreamTrackRef } from './sources/provider'
+import { delayFracLabel } from './engine/fx'
+import type { MidiBinding } from './midi/midi'
 
 const AUDIO_EXT = /\.(wav|aiff?|flac|mp3|m4a|aac|ogg)$/i
 
@@ -314,6 +316,23 @@ function actionPress(action: string): void {
         else log(`deck ${deck.id} key lock unavailable while stems are loaded`)
         break
       }
+      case 'delay':
+        deck.fx.setDelay(!deck.fx.delayOn)
+        break
+      case 'delayFrac': {
+        const f = deck.fx.cycleDelayFrac()
+        log(`deck ${deck.id} delay = ${delayFracLabel(f)} beat`)
+        break
+      }
+      case 'reverb':
+        deck.fx.setReverb(!deck.fx.reverbOn)
+        break
+      case 'echoOut':
+        deck.fx.echoOutEngage()
+        break
+      case 'cueMix':
+        engine.setCueMix(deck.id, !engine.isCueMix(deck.id))
+        break
       case 'bendDown':
         releaseSyncIfSlave(deck)
         deck.bend(-0.06)
@@ -335,15 +354,27 @@ function actionPress(action: string): void {
     case 'mix.crossCenter':
       engine.mixer.setCrossfade(0.5)
       break
+    case 'mix.splitCue': {
+      const on = engine.setSplitCue(!engine.splitCue)
+      if (on) {
+        log('split cue ON — master → ch 1/2, headphone cue → ch 3/4. create a macOS Aggregate Device (speakers + headphones) and select it as the sound output')
+      } else {
+        log('split cue OFF — everything on the default stereo output')
+      }
+      break
+    }
   }
 }
 
 function actionRelease(action: string): void {
   const deck = deckOf(action)
-  if (!deck) return
-  const verb = action.slice(6)
-  if (verb === 'cue') deck.cueRelease()
-  else if (verb === 'bendDown' || verb === 'bendUp') deck.bend(0)
+  if (deck) {
+    const verb = action.slice(6)
+    if (verb === 'cue') deck.cueRelease()
+    else if (verb === 'bendDown' || verb === 'bendUp') deck.bend(0)
+    else if (verb === 'echoOut') deck.fx.echoOutRelease()
+    return
+  }
 }
 
 const KEY_ACTIONS: Record<string, string> = {
@@ -363,7 +394,12 @@ const KEY_ACTIONS: Record<string, string> = {
   Digit8: 'deckB.keylock',
   Comma: 'mix.crossLeft',
   Period: 'mix.crossRight',
-  Space: 'mix.crossCenter'
+  Space: 'mix.crossCenter',
+  KeyG: 'deckA.echoOut',
+  KeyH: 'deckB.echoOut',
+  KeyZ: 'deckA.cueMix',
+  Slash: 'deckB.cueMix',
+  KeyX: 'mix.splitCue'
 }
 
 const HOTCUE_KEYS: Record<string, ['A' | 'B', number]> = {
@@ -490,6 +526,14 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   const applyEq = () => deck.setEQ(eqs[0].valueAsNumber, eqs[1].valueAsNumber, eqs[2].valueAsNumber)
   eqs.forEach((e) => (e.oninput = applyEq))
   r.stemSliders.forEach((s, i) => (s.oninput = () => deck.setStemGain(i, s.valueAsNumber)))
+  r.filter.oninput = () => deck.setFilter(r.filter.valueAsNumber)
+  r.filter.ondblclick = () => {
+    r.filter.value = '0'
+    deck.setFilter(0)
+  }
+  r.wet.oninput = () => deck.fx.setWet(r.wet.valueAsNumber)
+  r.fb.oninput = () => deck.fx.setFb(r.fb.valueAsNumber)
+  r.vol.oninput = () => deck.setVolume(r.vol.valueAsNumber)
 
   r.hotcueBtns.forEach((btn, i) => {
     btn.addEventListener('pointerdown', (e) => {
@@ -554,6 +598,7 @@ refs.master.addEventListener('input', () => {
 })
 
 let lastSyncUpdate = 0
+let lastFxBpmUpdate = 0
 
 function tick(): void {
   const now = performance.now()
@@ -561,11 +606,21 @@ function tick(): void {
     lastSyncUpdate = now
     syncCtl.update()
   }
+  const updateFxBpm = now - lastFxBpmUpdate > 250
+  if (updateFxBpm) lastFxBpmUpdate = now
   for (const deck of [engine.deckA, engine.deckB]) {
     const r = deckRefs(deck)
     r.playBtn.classList.toggle('active', deck.playing)
     r.syncBtn.classList.toggle('active', syncCtl.slave === deck.id)
     r.keylockBtn.classList.toggle('active', deck.keylock)
+    r.delayBtn.classList.toggle('active', deck.fx.delayOn)
+    r.reverbBtn.classList.toggle('active', deck.fx.reverbOn)
+    r.echoBtn.classList.toggle('active', deck.fx.echoActive)
+    r.cueMixBtn.classList.toggle('active', engine.isCueMix(deck.id))
+    r.fracBtn.textContent = delayFracLabel(deck.fx.delayFrac)
+    if (updateFxBpm && (deck.fx.delayOn || deck.fx.echoActive)) {
+      deck.fx.setBpm(deck.effectiveBpm ?? deck.track?.grid?.bpm ?? 0)
+    }
     const bpm = deck.effectiveBpm
     r.bpm.textContent = bpm ? bpm.toFixed(1) : '–.–'
     r.key.textContent = deck.track?.camelot ?? deck.track?.key ?? ''
@@ -583,6 +638,7 @@ function tick(): void {
   if (document.activeElement !== refs.xfader) {
     refs.xfader.value = String(engine.mixer.position)
   }
+  refs.splitCueBtn.classList.toggle('active', engine.splitCue)
   requestAnimationFrame(tick)
 }
 
@@ -592,14 +648,18 @@ function tick(): void {
 
 const ACTION_IDS = [
   'deckA.play', 'deckA.cue', 'deckA.setCue', 'deckA.sync', 'deckA.keylock',
-  'deckA.bendDown', 'deckA.bendUp',
+  'deckA.bendDown', 'deckA.bendUp', 'deckA.cueMix',
   'deckA.hotcue1', 'deckA.hotcue2', 'deckA.hotcue3', 'deckA.hotcue4',
   'deckA.setHotcue1', 'deckA.setHotcue2', 'deckA.setHotcue3', 'deckA.setHotcue4',
+  'deckA.delay', 'deckA.delayFrac', 'deckA.reverb', 'deckA.echoOut',
+  'deckA.filter', 'deckA.volume', 'deckA.delayWet', 'deckA.delayFb',
   'deckB.play', 'deckB.cue', 'deckB.setCue', 'deckB.sync', 'deckB.keylock',
-  'deckB.bendDown', 'deckB.bendUp',
+  'deckB.bendDown', 'deckB.bendUp', 'deckB.cueMix',
   'deckB.hotcue1', 'deckB.hotcue2', 'deckB.hotcue3', 'deckB.hotcue4',
   'deckB.setHotcue1', 'deckB.setHotcue2', 'deckB.setHotcue3', 'deckB.setHotcue4',
-  'mix.crossLeft', 'mix.crossRight', 'mix.crossCenter', 'mix.crossfade'
+  'deckB.delay', 'deckB.delayFrac', 'deckB.reverb', 'deckB.echoOut',
+  'deckB.filter', 'deckB.volume', 'deckB.delayWet', 'deckB.delayFb',
+  'mix.crossLeft', 'mix.crossRight', 'mix.crossCenter', 'mix.crossfade', 'mix.splitCue'
 ]
 
 function renderMidiPanel(): void {
@@ -629,10 +689,33 @@ midi.onDevices = (names) => {
   refs.midiDevices.textContent = names.length ? names.join(', ') : 'no devices'
 }
 midi.onAction = (actionId, msg) => {
-  if (actionId === 'mix.crossfade') {
-    if (msg.type === 'cc') engine.mixer.setCrossfade(msg.value / 127)
-    return
+  // continuous (CC value) actions
+  if (msg.type === 'cc') {
+    if (actionId === 'mix.crossfade') {
+      engine.mixer.setCrossfade(msg.value / 127)
+      return
+    }
+    const deck = deckOf(actionId)
+    if (deck) {
+      if (actionId.endsWith('.filter')) {
+        deck.setFilter((msg.value - 64) / 63)
+        return
+      }
+      if (actionId.endsWith('.volume')) {
+        deck.setVolume(msg.value / 127)
+        return
+      }
+      if (actionId.endsWith('.delayWet')) {
+        deck.fx.setWet(msg.value / 127)
+        return
+      }
+      if (actionId.endsWith('.delayFb')) {
+        deck.fx.setFb((msg.value / 127) * 0.9)
+        return
+      }
+    }
   }
+  // press/release actions
   if (msg.type === 'note') {
     if (msg.value > 0) actionPress(actionId)
     else actionRelease(actionId)
@@ -641,6 +724,72 @@ midi.onAction = (actionId, msg) => {
     else actionRelease(actionId)
   }
 }
+
+// ---------------------------------------------------------------------------
+// K.O. II pad preset + auto-map wizard
+// ---------------------------------------------------------------------------
+
+// K.O. II pads send MIDI notes per group (documented in TE's guide):
+// group A = 36–47, B = 48–59, C = 60–71, D = 72–83 (channel 1 by default).
+const KO2_PAD_ACTIONS: [number, string][] = [
+  // group A — deck A
+  [36, 'deckA.play'], [37, 'deckA.cue'], [38, 'deckA.setCue'], [39, 'deckA.sync'],
+  [40, 'deckA.hotcue1'], [41, 'deckA.hotcue2'], [42, 'deckA.hotcue3'], [43, 'deckA.hotcue4'],
+  [44, 'deckA.echoOut'], [45, 'deckA.delay'], [46, 'deckA.delayFrac'], [47, 'deckA.reverb'],
+  // group B — deck A setters + toggles
+  [48, 'deckA.setHotcue1'], [49, 'deckA.setHotcue2'], [50, 'deckA.setHotcue3'], [51, 'deckA.setHotcue4'],
+  [52, 'deckA.cueMix'], [53, 'deckA.keylock'],
+  // group C — deck B
+  [60, 'deckB.play'], [61, 'deckB.cue'], [62, 'deckB.setCue'], [63, 'deckB.sync'],
+  [64, 'deckB.hotcue1'], [65, 'deckB.hotcue2'], [66, 'deckB.hotcue3'], [67, 'deckB.hotcue4'],
+  [68, 'deckB.echoOut'], [69, 'deckB.delay'], [70, 'deckB.delayFrac'], [71, 'deckB.reverb'],
+  // group D — deck B setters + toggles
+  [72, 'deckB.setHotcue1'], [73, 'deckB.setHotcue2'], [74, 'deckB.setHotcue3'], [75, 'deckB.setHotcue4'],
+  [76, 'deckB.cueMix'], [77, 'deckB.keylock']
+]
+
+function ko2Preset(): Record<string, MidiBinding> {
+  const out: Record<string, MidiBinding> = {}
+  for (const [note, action] of KO2_PAD_ACTIONS) out[action] = { type: 'note', channel: 0, control: note }
+  return out
+}
+
+refs.midiKo2.addEventListener('click', () => {
+  midi.applyPreset(ko2Preset())
+  log('loaded K.O. II pad preset (groups A/C = deck controls, B/D = hot cue setters). faders/knobs: use learn or the wizard. tip: set pads to sound 000 on the K.O. II so they stay silent')
+})
+
+const WIZARD_ACTIONS = [
+  'deckA.play', 'deckA.cue', 'deckA.sync',
+  'deckA.hotcue1', 'deckA.hotcue2', 'deckA.hotcue3', 'deckA.hotcue4',
+  'deckA.echoOut', 'deckA.delay', 'deckA.delayFrac', 'deckA.reverb',
+  'deckA.cueMix', 'deckA.filter', 'deckA.volume',
+  'deckB.play', 'deckB.cue', 'deckB.sync',
+  'deckB.hotcue1', 'deckB.hotcue2', 'deckB.hotcue3', 'deckB.hotcue4',
+  'deckB.echoOut', 'deckB.delay', 'deckB.delayFrac', 'deckB.reverb',
+  'deckB.cueMix', 'deckB.filter', 'deckB.volume',
+  'mix.crossfade'
+]
+
+refs.midiWizard.addEventListener('click', () => {
+  if (midi.isSequencing) {
+    midi.startSequence(null)
+    return
+  }
+  log('auto-map wizard: touch controls on your device in the order shown — click the button again to cancel')
+  midi.startSequence(WIZARD_ACTIONS, {
+    onStep: (action, i, n) => {
+      refs.midiWizardStatus.textContent = `${i}/${n} — ${action} — touch a control…`
+    },
+    onDone: () => {
+      refs.midiWizardStatus.textContent = 'auto-map complete ✓'
+      log('auto-map wizard complete — bindings saved')
+    },
+    onCancel: () => {
+      refs.midiWizardStatus.textContent = ''
+    }
+  })
+})
 
 // ---------------------------------------------------------------------------
 // SoundCloud stream panel
