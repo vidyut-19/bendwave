@@ -10,6 +10,7 @@ import { buildApp, type AppRefs, type DeckRefs } from './ui'
 import { SoundCloudProvider } from './sources/soundcloud'
 import { registerProvider, type StreamTrackRef } from './sources/provider'
 import { delayFracLabel } from './engine/fx'
+import { AudioMemory } from './engine/memory'
 import type { MidiBinding } from './midi/midi'
 
 const AUDIO_EXT = /\.(wav|aiff?|flac|mp3|m4a|aac|ogg)$/i
@@ -22,6 +23,9 @@ const refs = buildApp(document.getElementById('app')!)
 
 const sc = new SoundCloudProvider(engine.ctx)
 registerProvider(sc)
+
+// decoded-audio budget manager (see docs/memory.md)
+const audioMem = new AudioMemory()
 
 const waveforms = new Map<string, WaveformView>()
 
@@ -110,6 +114,7 @@ async function ingest(path: string, name: string, buffer: AudioBuffer): Promise<
   track.name = name
   track.durationSec = buffer.duration
   track.sampleRate = buffer.sampleRate
+  track.pcmBytes = AudioMemory.bytesOf(buffer)
   if (!track.grid || track.analysisSource === 'browser') {
     track.grid = computeBeatGrid(buffer)
     track.analysisSource = 'browser'
@@ -189,9 +194,18 @@ async function attachStems(deck: Deck, track: Track): Promise<void> {
     if (deck.track?.id !== track.id) return
     deck.setStemBuffers(bufs)
     updateStemsUI(deck)
+    audioMem.track(track.id, track.name, (track.pcmBytes ?? 0) + AudioMemory.bytesOf(...bufs))
   } catch (e) {
     log(`stem load failed: ${String(e)}`)
   }
+}
+
+/** register a streamed buffer with the budget; LRU eviction drops the provider cache entry */
+function registerSCMemory(id: string, label: string, buffer: AudioBuffer): void {
+  audioMem.track(`sc:${id}`, `sc:${label}`, AudioMemory.bytesOf(buffer), () => {
+    sc.cacheDelete(id)
+    log(`memory: evicted cached stream "${label}"`)
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -225,12 +239,14 @@ async function loadTrackIntoDeck(track: Track, buffer?: AudioBuffer): Promise<vo
         const r = await sc.resolve(refFromTrack(track))
         if (r.kind !== 'buffer') throw new Error('url streams not supported')
         buf = r.buffer
+        registerSCMemory(track.path, track.name, buf)
       } else {
         buf = await decodePath(track.path)
       }
     }
     const stemBufs = track.stems ? await loadStemBuffers(track) : []
     await deck.load(track, buf, stemBufs)
+    audioMem.track(track.id, track.name, AudioMemory.bytesOf(buf, ...stemBufs))
     focusedDeck = deck.id
     updateDeckUI(deck)
     updateStemsUI(deck)
@@ -617,7 +633,8 @@ function renderCrate(): void {
       .filter(Boolean)
       .join(' · ')
     li.innerHTML = `<span class="crate-name">${escapeHtml(t.name)}</span><span class="crate-meta">${escapeHtml(meta)}</span>`
-    if (t.sourceUrl) li.title = t.sourceUrl
+    const mb = t.pcmBytes ? `${(t.pcmBytes / (1024 * 1024)).toFixed(0)}MB` : ''
+    li.title = `${fmtTime(t.durationSec)}${mb ? ` · ${mb} PCM` : ''}${t.sourceUrl ? ` · ${t.sourceUrl}` : ''}`
     li.addEventListener('click', () => void loadTrackIntoDeck(t))
     refs.crateList.append(li)
   }
@@ -630,12 +647,31 @@ refs.master.addEventListener('input', () => {
 
 let lastSyncUpdate = 0
 let lastFxBpmUpdate = 0
+let lastMemUpdate = 0
+let lastMemEnforce = 0
 
 function tick(): void {
   const now = performance.now()
   if (now - lastSyncUpdate > 200) {
     lastSyncUpdate = now
     syncCtl.update()
+  }
+  if (now - lastMemUpdate > 1000) {
+    lastMemUpdate = now
+    const u = audioMem.usage()
+    refs.memMeter.textContent = `AUDIO ${AudioMemory.fmt(u.used)} / ${AudioMemory.fmt(u.budget)}`
+    refs.memMeter.classList.toggle('warn', u.used > u.budget * 0.85)
+  }
+  if (now - lastMemEnforce > 3000) {
+    lastMemEnforce = now
+    for (const d of [engine.deckA, engine.deckB]) {
+      if (d.track) audioMem.touch(d.track.id)
+    }
+    const { evicted } = audioMem.enforce([
+      engine.deckA.track?.id ?? '',
+      engine.deckB.track?.id ?? ''
+    ])
+    for (const label of evicted) log(`memory: over budget — evicted ${label}`)
   }
   const updateFxBpm = now - lastFxBpmUpdate > 250
   if (updateFxBpm) lastFxBpmUpdate = now
@@ -930,6 +966,8 @@ async function addStreamTrack(ref: StreamTrackRef): Promise<void> {
       analysisSource: 'browser'
     }
     track.grid = computeBeatGrid(buffer)
+    track.pcmBytes = AudioMemory.bytesOf(buffer)
+    registerSCMemory(ref.id, track.name, buffer)
     crate.upsert(track)
     renderCrate()
     await loadTrackIntoDeck(track, buffer)

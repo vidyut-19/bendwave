@@ -31,6 +31,13 @@ Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI
   (speakers + headphones) to pre-listen like a real mixer.
 - **K.O. II preset**: documented pad map (groups A–D, notes 36–83) loaded with one click,
   plus an auto-map wizard for faders/knobs — see [docs/ko2-mapping.md](docs/ko2-mapping.md).
+- **Memory architecture**: decoded-audio budget manager (1.25 GB default) with LRU
+  eviction for stream caches, peak mip-pyramids so waveform redraw is O(pixels) at any
+  zoom, and a live `AUDIO used/budget` meter in the header. Full design — including the
+  int16 sample-store and windowed file-paging tiers — in [docs/memory.md](docs/memory.md).
+- **Off-the-shelf DSP core**: key lock now runs on **Signalsmith Stretch** (MIT, official
+  WASM/AudioWorklet build) — the same node's streaming API is the foundation for the
+  memory tiers above. The hand-rolled WSOLA worklet remains as automatic fallback.
 - **Drop-and-play**: drag WAV/FLAC/MP3/AIFF/M4A anywhere, or use "add tracks…".
 - **Instant BPM**: an in-browser onset/autocorrelation beatgrid estimator runs the moment a
   track loads — no dependencies required.

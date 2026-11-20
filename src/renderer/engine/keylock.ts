@@ -1,13 +1,120 @@
 import workletSrc from './keylock-worklet.js?raw'
 
+/**
+ * Key-lock engine seam. Two implementations:
+ *
+ * 1. Signalsmith Stretch (preferred) — off-the-shelf MIT DSP core with an
+ *    official WASM/AudioWorklet build. `rate` is pitch-preserving playback
+ *    rate, `semitones` independent, native loopStart/loopEnd, and
+ *    addBuffers/dropBuffers streaming (the Tier-2 memory foundation).
+ * 2. The hand-rolled WSOLA worklet (fallback) — keeps working if the package
+ *    fails to load in some environment.
+ */
+
+export interface KLEngine {
+  onPosition?: (posSec: number) => void
+  onEnded?: () => void
+  play(posSec: number, rate: number): void
+  stop(): void
+  seek(posSec: number): void
+  setRate(rate: number): void
+  setLoop(startSec: number, lenSec: number): void
+  clearLoop(): void
+  dispose(): void
+}
+
+// ---------------------------------------------------------------------------
+// primary: signalsmith stretch
+// ---------------------------------------------------------------------------
+
+import type { StretchNode } from 'signalsmith-stretch'
+
+class SignalsmithKL implements KLEngine {
+  onPosition?: (posSec: number) => void
+  onEnded?: () => void
+  private loopOn = false
+  private ended = false
+  private node: StretchNode
+  private duration: number
+
+  private constructor(node: StretchNode, duration: number) {
+    this.node = node
+    this.duration = duration
+    node.setUpdateInterval(0.08, () => {
+      const t = node.inputTime
+      this.onPosition?.(t)
+      if (!this.loopOn && !this.ended && t >= duration - 0.05) {
+        this.ended = true
+        this.onEnded?.()
+      }
+    })
+  }
+
+  static async create(ctx: AudioContext, buffer: AudioBuffer, dest: AudioNode): Promise<SignalsmithKL> {
+    const mod = await import('signalsmith-stretch')
+    const node = await mod.SignalsmithStretch(ctx, {
+      numberOfInputs: 0,
+      numberOfOutputs: 1,
+      outputChannelCount: [Math.max(1, buffer.numberOfChannels)]
+    })
+    const channels: Float32Array[] = []
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      channels.push(buffer.getChannelData(c).slice())
+    }
+    await node.addBuffers(channels)
+    node.connect(dest)
+    return new SignalsmithKL(node, buffer.duration)
+  }
+
+  play(posSec: number, rate: number): void {
+    this.ended = false
+    this.node.schedule({ active: true, input: posSec, rate })
+  }
+
+  stop(): void {
+    this.node.schedule({ active: false })
+  }
+
+  seek(posSec: number): void {
+    this.ended = false
+    this.node.schedule({ input: posSec })
+  }
+
+  setRate(rate: number): void {
+    this.node.schedule({ rate })
+  }
+
+  setLoop(startSec: number, lenSec: number): void {
+    this.loopOn = true
+    this.node.schedule({ loopStart: startSec, loopEnd: startSec + lenSec })
+  }
+
+  clearLoop(): void {
+    this.loopOn = false
+    this.node.schedule({ loopStart: 0, loopEnd: 0 })
+  }
+
+  dispose(): void {
+    try {
+      this.node.schedule({ active: false })
+    } catch {
+      /* node may be gone */
+    }
+    try {
+      this.node.disconnect()
+    } catch {
+      /* noop */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// fallback: hand-rolled WSOLA worklet
+// ---------------------------------------------------------------------------
+
 let modulePromise: Promise<void> | null = null
 
-/**
- * Loads the keylock worklet module once per context. The source is embedded
- * as a string and served from a blob URL so it works both from the vite dev
- * server and from file:// in the packaged app.
- */
-function loadModule(ctx: AudioContext): Promise<void> {
+function loadWorkletModule(ctx: AudioContext): Promise<void> {
   if (!modulePromise) {
     const url = URL.createObjectURL(new Blob([workletSrc], { type: 'application/javascript' }))
     modulePromise = ctx.audioWorklet.addModule(url).finally(() => URL.revokeObjectURL(url))
@@ -15,16 +122,10 @@ function loadModule(ctx: AudioContext): Promise<void> {
   return modulePromise
 }
 
-/**
- * Realtime key-lock source node. Owns a copy of the track's channel data and
- * generates time-stretched, pitch-preserved audio itself (see
- * keylock-worklet.js). ~70ms of lookahead latency; position reports come back
- * over the port so the deck can keep its math honest.
- */
-export class KeylockNode {
-  private node: AudioWorkletNode
+export class WorkletKL implements KLEngine {
   onPosition?: (posSec: number) => void
   onEnded?: () => void
+  private node: AudioWorkletNode
 
   private constructor(node: AudioWorkletNode) {
     this.node = node
@@ -35,18 +136,20 @@ export class KeylockNode {
     }
   }
 
-  static async create(ctx: AudioContext, buffer: AudioBuffer, dest: AudioNode): Promise<KeylockNode> {
-    await loadModule(ctx)
+  static async create(ctx: AudioContext, buffer: AudioBuffer, dest: AudioNode): Promise<WorkletKL> {
+    await loadWorkletModule(ctx)
     const node = new AudioWorkletNode(ctx, 'keylock-processor', {
       numberOfInputs: 0,
       numberOfOutputs: 1,
       outputChannelCount: [Math.max(1, buffer.numberOfChannels)]
     })
     const channels: Float32Array[] = []
-    for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c).slice())
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      channels.push(buffer.getChannelData(c).slice())
+    }
     node.port.postMessage({ type: 'init', channels }, channels.map((c) => c.buffer))
     node.connect(dest)
-    return new KeylockNode(node)
+    return new WorkletKL(node)
   }
 
   play(posSec: number, rate: number): void {
@@ -65,7 +168,6 @@ export class KeylockNode {
     this.node.port.postMessage({ type: 'rate', rate })
   }
 
-  /** Loop inside the worklet (OLА smooths the loop point). */
   setLoop(startSec: number, lenSec: number): void {
     this.node.port.postMessage({ type: 'loop', start: startSec, len: lenSec })
   }
@@ -86,4 +188,22 @@ export class KeylockNode {
       /* noop */
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// selector
+// ---------------------------------------------------------------------------
+
+let signalsmithFailed = false
+
+export async function createKL(ctx: AudioContext, buffer: AudioBuffer, dest: AudioNode): Promise<KLEngine> {
+  if (!signalsmithFailed) {
+    try {
+      return await SignalsmithKL.create(ctx, buffer, dest)
+    } catch (e) {
+      signalsmithFailed = true
+      console.warn('vibedeck: signalsmith-stretch unavailable, using WSOLA fallback', e)
+    }
+  }
+  return WorkletKL.create(ctx, buffer, dest)
 }

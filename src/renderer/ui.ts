@@ -38,6 +38,7 @@ export interface AppRefs {
   xfader: HTMLInputElement
   master: HTMLInputElement
   splitCueBtn: HTMLButtonElement
+  memMeter: HTMLElement
   crateList: HTMLUListElement
   crateCount: HTMLElement
   midiDevices: HTMLElement
@@ -165,7 +166,7 @@ export function buildApp(root: HTMLElement): AppRefs {
   const addBtn = document.createElement('button')
   addBtn.textContent = 'add tracks…'
   header.innerHTML =
-    '<h1>VIBEDECK</h1><span class="hint">drop audio anywhere · Q/W deck A · P/O deck B · A S D F / J K L ; hot cues · SYNC twice to unlock</span>'
+    '<h1>VIBEDECK</h1><span class="hint">drop audio anywhere · Q/W deck A · P/O deck B · A S D F / J K L ; hot cues · SYNC twice to unlock</span><span class="mem-meter"></span>'
   header.append(addBtn)
 
   const main = document.createElement('main')
@@ -216,6 +217,7 @@ export function buildApp(root: HTMLElement): AppRefs {
     xfader: mixer.querySelector('.xfader') as HTMLInputElement,
     master: mixer.querySelector('.master') as HTMLInputElement,
     splitCueBtn: mixer.querySelector('.split-cue') as HTMLButtonElement,
+    memMeter: header.querySelector('.mem-meter') as HTMLElement,
     crateList: footer.querySelector('.crate-list') as HTMLUListElement,
     crateCount: footer.querySelector('.crate-count') as HTMLElement,
     midiDevices: footer.querySelector('.midi-devices') as HTMLElement,

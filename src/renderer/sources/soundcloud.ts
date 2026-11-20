@@ -117,6 +117,11 @@ export class SoundCloudProvider implements AudioSourceProvider {
     return this.cache.get(id)
   }
 
+  /** drop a session cache entry (memory eviction hook) */
+  cacheDelete(id: string): void {
+    this.cache.delete(id)
+  }
+
   async search(q: string): Promise<StreamTrackRef[]> {
     const r = await this.get('/tracks', { q, access: 'playable', limit: '20' })
     const list = (Array.isArray(r) ? r : []) as SCTrackJson[]

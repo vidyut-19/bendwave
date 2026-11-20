@@ -24,5 +24,8 @@
   "allowScripts": {
     "electron@35.7.5": true,
     "esbuild@0.25.12": true
+  },
+  "dependencies": {
+    "signalsmith-stretch": "^1.3.2"
   }
 }

@@ -32,6 +32,8 @@ header {
 }
 header h1 { font-size: 14px; margin: 0; letter-spacing: 0.08em; }
 header .hint { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+header .mem-meter { margin-left: auto; color: var(--dim); font-size: 11px; white-space: nowrap; }
+header .mem-meter.warn { color: #f59e0b; }
 
 button {
   background: var(--panel-2);

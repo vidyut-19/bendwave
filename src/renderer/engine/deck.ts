@@ -1,4 +1,4 @@
-import { KeylockNode } from './keylock'
+import { createKL, type KLEngine } from './keylock'
 import { FXUnit } from './fx'
 
 export interface BeatGrid {
@@ -35,6 +35,8 @@ export interface Track {
   cue?: number
   /** 4 hot cue points (seconds or null), persisted in the crate */
   hotCues?: (number | null)[]
+  /** decoded main-mix PCM size in bytes (Float32) — memory accounting */
+  pcmBytes?: number
   analyzedAt?: string
   analysisSource?: 'browser' | 'sidecar'
 }
@@ -63,7 +65,7 @@ export class Deck {
 
   /** experimental pitch-preserving playback (full-mix decks only, no stems) */
   keylock = false
-  private kl: KeylockNode | null = null
+  private kl: KLEngine | null = null
   private klBusy = false
   onEnded?: () => void
   onKeylockError?: (msg: string) => void
@@ -500,7 +502,7 @@ export class Deck {
     this.klBusy = true
     try {
       if (!this.kl && this.buffer) {
-        this.kl = await KeylockNode.create(this.ctx, this.buffer, this.preGain)
+        this.kl = await createKL(this.ctx, this.buffer, this.preGain)
         this.kl.onPosition = (p) => {
           if (this.playing) {
             this.startPos = p

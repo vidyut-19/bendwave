@@ -13,7 +13,9 @@ export class WaveformView {
   private canvas: HTMLCanvasElement
   private g: CanvasRenderingContext2D
   private peaks: Float32Array | null = null
-  private pps = 0 // peaks per second
+  /** mip-pyramid: level n aggregates 4^n base buckets — O(pixels) redraw at any zoom */
+  private levels: Float32Array[] = []
+  private pps = 0 // base buckets (512-sample) per second
   zoomSec = 10
   onSeek?: (timeSec: number) => void
 
@@ -60,6 +62,7 @@ export class WaveformView {
   setBuffer(buffer: AudioBuffer | null): void {
     if (!buffer) {
       this.peaks = null
+      this.levels = []
       return
     }
     const n = buffer.length
@@ -81,6 +84,23 @@ export class WaveformView {
     }
     this.peaks = peaks
     this.pps = buffer.sampleRate / PEAK_BUCKET
+
+    // build mip levels (4x max-aggregation each) until coarse enough
+    const levels: Float32Array[] = [peaks]
+    while (levels[levels.length - 1].length > 256) {
+      const prev = levels[levels.length - 1]
+      const next = new Float32Array(Math.ceil(prev.length / 4))
+      for (let i = 0; i < next.length; i++) {
+        let m = 0
+        const en = Math.min(prev.length, (i + 1) * 4)
+        for (let j = i * 4; j < en; j++) {
+          if (prev[j] > m) m = prev[j]
+        }
+        next[i] = m
+      }
+      levels.push(next)
+    }
+    this.levels = levels
   }
 
   draw(deck: Deck): void {
@@ -112,17 +132,22 @@ export class WaveformView {
     g.lineTo(w, h / 2)
     g.stroke()
 
-    // waveform
+    // waveform — pick the mip level so each pixel column scans ~1-4 buckets
+    const bucketsPerPx = secPerPx * this.pps
+    let levelIdx = 0
+    while (levelIdx < this.levels.length - 1 && bucketsPerPx / Math.pow(4, levelIdx) > 4) levelIdx++
+    const lvl = this.levels[levelIdx]
+    const lvlPps = this.pps / Math.pow(4, levelIdx)
     g.fillStyle = deck.id === 'A' ? '#ff5c39' : '#38bdf8'
     for (let x = 0; x < w; x++) {
       const ta = t0 + x * secPerPx
       const tb = ta + secPerPx
-      if (tb < 0 || ta > this.peaks.length / this.pps) continue
+      if (tb < 0 || ta > lvl.length / lvlPps) continue
       let m = 0
-      const i0 = Math.max(0, Math.floor(ta * this.pps))
-      const i1 = Math.min(this.peaks.length, Math.ceil(tb * this.pps))
+      const i0 = Math.max(0, Math.floor(ta * lvlPps))
+      const i1 = Math.min(lvl.length, Math.ceil(tb * lvlPps))
       for (let i = i0; i < i1; i++) {
-        if (this.peaks[i] > m) m = this.peaks[i]
+        if (lvl[i] > m) m = lvl[i]
       }
       if (m > 0) {
         const bh = Math.max(1, m * h * 0.46)
