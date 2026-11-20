@@ -11,6 +11,7 @@ import { SoundCloudProvider } from './sources/soundcloud'
 import { registerProvider, type StreamTrackRef } from './sources/provider'
 import { delayFracLabel } from './engine/fx'
 import { AudioMemory } from './engine/memory'
+import { computeLoudness, autoGainDb, TARGET_LUFS } from './engine/analysis'
 import type { MidiBinding } from './midi/midi'
 
 const AUDIO_EXT = /\.(wav|aiff?|flac|mp3|m4a|aac|ogg)$/i
@@ -26,6 +27,9 @@ registerProvider(sc)
 
 // decoded-audio budget manager (see docs/memory.md)
 const audioMem = new AudioMemory()
+
+// auto-gain: normalize tracks to TARGET_LUFS via trim on deck load
+let autoGain = localStorage.getItem('vibedeck.autogain') !== 'off'
 
 const waveforms = new Map<string, WaveformView>()
 
@@ -248,6 +252,20 @@ async function loadTrackIntoDeck(track: Track, buffer?: AudioBuffer): Promise<vo
     await deck.load(track, buf, stemBufs)
     audioMem.track(track.id, track.name, AudioMemory.bytesOf(buf, ...stemBufs))
     focusedDeck = deck.id
+    if (track.gainDb == null) {
+      track.lufs = computeLoudness(buf)
+      track.gainDb = autoGainDb(track.lufs)
+      crate.upsert(track)
+    }
+    if (autoGain && track.gainDb != null) {
+      deck.setTrim(track.gainDb)
+      const r = deckRefs(deck)
+      if (document.activeElement !== r.trim) r.trim.value = String(track.gainDb.toFixed(1))
+      log(
+        `deck ${deck.id} auto-gain ${track.gainDb >= 0 ? '+' : ''}${track.gainDb.toFixed(1)} dB` +
+          (isFinite(track.lufs ?? NaN) ? ` (track ${(track.lufs as number).toFixed(1)} LUFS → ${TARGET_LUFS})` : '')
+      )
+    }
     updateDeckUI(deck)
     updateStemsUI(deck)
     log(`loaded "${track.name}" → deck ${deck.id}`)
@@ -398,6 +416,21 @@ function actionPress(action: string): void {
       }
       break
     }
+    case 'mix.autoGain': {
+      autoGain = !autoGain
+      localStorage.setItem('vibedeck.autogain', autoGain ? 'on' : 'off')
+      log(`auto-gain ${autoGain ? `ON — normalizing to ${TARGET_LUFS} LUFS on load` : 'OFF'}`)
+      if (autoGain) {
+        for (const d of [engine.deckA, engine.deckB]) {
+          if (d.track?.gainDb != null) {
+            d.setTrim(d.track.gainDb)
+            const r = deckRefs(d)
+            if (document.activeElement !== r.trim) r.trim.value = String(d.track.gainDb.toFixed(1))
+          }
+        }
+      }
+      break
+    }
   }
 }
 
@@ -445,7 +478,8 @@ const KEY_ACTIONS: Record<string, string> = {
   KeyM: 'deckB.loop4',
   Quote: 'deckB.loop8',
   KeyT: 'deckA.loopLatch',
-  KeyY: 'deckB.loopLatch'
+  KeyY: 'deckB.loopLatch',
+  KeyC: 'mix.autoGain'
 }
 
 const HOTCUE_KEYS: Record<string, ['A' | 'B', number]> = {
@@ -712,6 +746,7 @@ function tick(): void {
     refs.xfader.value = String(engine.mixer.position)
   }
   refs.splitCueBtn.classList.toggle('active', engine.splitCue)
+  refs.autoGainBtn.classList.toggle('active', autoGain)
   requestAnimationFrame(tick)
 }
 
@@ -734,7 +769,7 @@ const ACTION_IDS = [
   'deckB.delay', 'deckB.delayFrac', 'deckB.reverb', 'deckB.echoOut',
   'deckB.filter', 'deckB.volume', 'deckB.delayWet', 'deckB.delayFb', 'deckB.trim',
   'deckB.loop1', 'deckB.loop2', 'deckB.loop4', 'deckB.loop8', 'deckB.loopLatch', 'deckB.loopExit',
-  'mix.crossLeft', 'mix.crossRight', 'mix.crossCenter', 'mix.crossfade', 'mix.splitCue'
+  'mix.crossLeft', 'mix.crossRight', 'mix.crossCenter', 'mix.crossfade', 'mix.splitCue', 'mix.autoGain'
 ]
 
 function renderMidiPanel(): void {

@@ -37,6 +37,9 @@ export interface Track {
   hotCues?: (number | null)[]
   /** decoded main-mix PCM size in bytes (Float32) — memory accounting */
   pcmBytes?: number
+  /** measured loudness (LUFS-approximate) and recommended trim for auto-gain */
+  lufs?: number
+  gainDb?: number
   analyzedAt?: string
   analysisSource?: 'browser' | 'sidecar'
 }

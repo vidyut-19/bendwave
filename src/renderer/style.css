@@ -118,7 +118,7 @@ main {
 .t-btn.fx.reverb.active { background: #22d3ee; border-color: #22d3ee; color: #052024; }
 .t-btn.fx.echo.active { background: #fb7185; border-color: #fb7185; color: #2a0510; }
 .t-btn.fx.cuemix.active { background: var(--good); border-color: var(--good); color: #08130b; }
-.t-btn.split-cue.active { background: var(--good); border-color: var(--good); color: #08130b; }
+.t-btn.split-cue.active, .t-btn.auto-gain.active { background: var(--good); border-color: var(--good); color: #08130b; }
 
 .loop-row { gap: 6px; }
 .loop-lab { color: var(--dim); font-size: 11px; }

@@ -38,6 +38,7 @@ export interface AppRefs {
   xfader: HTMLInputElement
   master: HTMLInputElement
   splitCueBtn: HTMLButtonElement
+  autoGainBtn: HTMLButtonElement
   memMeter: HTMLElement
   crateList: HTMLUListElement
   crateCount: HTMLElement
@@ -179,6 +180,7 @@ export function buildApp(root: HTMLElement): AppRefs {
     <div class="xf-row"><span>A</span><input class="xfader" type="range" min="0" max="1" step="0.01" value="0.5" /><span>B</span></div>
     <button class="t-btn xf-center" data-act="mix.crossCenter">CENTER</button>
     <button class="t-btn split-cue" data-act="mix.splitCue" title="master on ch 1/2, headphone cue on ch 3/4 (use an aggregate audio device)">SPLIT CUE</button>
+    <button class="t-btn auto-gain" data-act="mix.autoGain" title="normalize tracks to ${-14} LUFS via trim on load">AUTO GAIN</button>
     <div class="row"><span>MASTER</span><input class="master" type="range" min="0" max="1" step="0.01" value="0.85" style="flex:1" /></div>`
 
   main.append(deckA.root, mixer, deckB.root)
@@ -217,6 +219,7 @@ export function buildApp(root: HTMLElement): AppRefs {
     xfader: mixer.querySelector('.xfader') as HTMLInputElement,
     master: mixer.querySelector('.master') as HTMLInputElement,
     splitCueBtn: mixer.querySelector('.split-cue') as HTMLButtonElement,
+    autoGainBtn: mixer.querySelector('.auto-gain') as HTMLButtonElement,
     memMeter: header.querySelector('.mem-meter') as HTMLElement,
     crateList: footer.querySelector('.crate-list') as HTMLUListElement,
     crateCount: footer.querySelector('.crate-count') as HTMLElement,

@@ -68,3 +68,42 @@ export function computeBeatGrid(buffer: AudioBuffer, minBpm = 70, maxBpm = 180):
     offset: Math.round(((bestPhase * hop) / sr) * 1000) / 1000
   }
 }
+
+/**
+ * Block-RMS loudness with gating — an LUFS approximation (no K-weighting).
+ * 100ms blocks, -70 dB absolute gate, -10 LU relative gate, per ITU-R BS.1770's
+ * shape. Plenty accurate for matching track levels; cheap enough to run in the
+ * same ingest pass as the beatgrid.
+ */
+export function computeLoudness(buffer: AudioBuffer): number {
+  const sr = buffer.sampleRate
+  const blockLen = Math.max(1, Math.floor(sr * 0.1))
+  const chs = Math.min(2, buffer.numberOfChannels)
+  const datas: Float32Array[] = []
+  for (let c = 0; c < chs; c++) datas.push(buffer.getChannelData(c))
+  const n = buffer.length
+  const energies: number[] = []
+  for (let st = 0; st + blockLen <= n; st += blockLen) {
+    let acc = 0
+    for (const d of datas) {
+      for (let i = st; i < st + blockLen; i++) acc += d[i] * d[i]
+    }
+    energies.push(acc / (blockLen * chs))
+  }
+  const gated = energies.filter((e) => e > 1e-7)
+  if (gated.length === 0) return -Infinity
+  const mean1 = gated.reduce((a, b) => a + b, 0) / gated.length
+  const relThresh = mean1 / 10 // -10 LU relative gate
+  const kept = gated.filter((e) => e > relThresh)
+  const mean = kept.length > 0 ? kept.reduce((a, b) => a + b, 0) / kept.length : mean1
+  return -0.691 + 10 * Math.log10(mean)
+}
+
+/** loudness we normalize tracks to (streaming-standard reference) */
+export const TARGET_LUFS = -14
+
+/** recommended trim in dB, clamped to the ±12 dB trim range */
+export function autoGainDb(lufs: number, target = TARGET_LUFS): number {
+  if (!isFinite(lufs)) return 0
+  return Math.max(-12, Math.min(12, target - lufs))
+}

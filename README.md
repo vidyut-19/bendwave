@@ -26,6 +26,10 @@ Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI
   delay with wet/feedback controls and switchable fraction (1/4, 1/2, 3/4, 1/1), reverb,
   and a momentary **echo out** (`G`/`H` — hold for the transition, release to let it ring).
 - **Channel volume faders + input trim** per deck (post-FX volume, pre-EQ ±12dB trim).
+- **Auto-gain**: tracks are loudness-analyzed on load (gated block-RMS, LUFS-approximate)
+  and the channel trim is set to normalize them to −14 LUFS, clamped to the ±12 dB trim
+  range. Persisted per track in the crate. Toggle: AUTO GAIN button or `C`; moving TRM
+  after load overrides for that track.
 - **Split-cue headphone monitoring**: per-deck CUE buttons + SPLIT CUE mode routes master
   on channels 1/2 and the cue bus on 3/4 — pair with a macOS Aggregate Device
   (speakers + headphones) to pre-listen like a real mixer.
