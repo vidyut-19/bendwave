@@ -91,6 +91,9 @@ Without these, vibedeck still works: browser-side BPM estimation covers beatmatc
 
 ## Architecture
 
+ASCII diagrams of the signal path, memory tiers, and control plane live in
+[docs/architecture.md](docs/architecture.md).
+
 ```
 electron/main.ts            window, IPC: file dialog, audio reads, crate JSON, sidecar spawn
 electron/preload.ts         contextBridge (incl. webUtils path for drag & drop)
