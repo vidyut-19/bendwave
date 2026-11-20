@@ -25,6 +25,9 @@ plays out its line-out jack. One-time setup:
 Notes:
 - Wired headphones/earbuds into the laptop are required — you listed none, so any
   wired pair you own works to start.
+- Sony WH-1000XM4 tip: they work **passively over the cable even powered off** — for DJing,
+  power them off (or disable BT) so they can't wander back to a phone, and consider ANC off
+  while learning so you hear the room alongside the cue.
 - **Don't use Bluetooth** for anything in the chain — 150ms+ latency makes cueing
   impossible. Aux only.
 - Caveats of this tier: aggregate devices can drift/click occasionally; the K.O. II
