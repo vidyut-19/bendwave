@@ -223,16 +223,9 @@ Design notes:
 
 ## Roadmap
 
-- [x] SoundCloud provider (OAuth 2.1 + PKCE, progressive stream → PCM, session-only cache, stems gated off)
-- [ ] TIDAL catalog enrichment (BPM/key backfill for the crate)
-- [ ] Beatgrid editing (tap tempo, nudge offset, half/double buttons)
-- [ ] MIDI clock out (lock a K.O. II pattern to deck BPM)
-- [ ] External input channel (K.O. II line/USB in as a live mixer channel)
-- [ ] Loop rolls (beat-loop 1/2/4/8 with worklet-friendly seek logic)
-- [ ] Waveform overview strip + library search/sort
-- [ ] Stem-aware recording of the master bus
-- [ ] Better key lock (phase vocoder or Rubber Band offline pre-render)
-- [ ] Analysis queue with progress UI for big crate imports
+Full connected roadmap across all 5 pillars (Deep Acoustic Fingerprint → Set Path Planner
+→ Intelligent Transition Engine → Automated Transition Curves → Hardware & Core Polish):
+**[ROADMAP.md](ROADMAP.md)**.
 
 ## Study material / credits
 
