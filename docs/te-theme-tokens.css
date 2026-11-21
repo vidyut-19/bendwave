@@ -1,0 +1,110 @@
+/* ==========================================================================
+ * vibedeck — Teenage Engineering × Winamp CSS Token Profile
+ *
+ * Two switchable hardware skins via <html data-theme="ko2-dark" | "ko2-light">:
+ *   - ko2-dark  (default booth mode: dark carbon chassis + glowing LCD glass)
+ *   - ko2-light (daytime EP-133 hardware twin: putty ABS #dedcd5 + obsidian LCD)
+ * ========================================================================== */
+
+:root {
+  /* Core Teenage Engineering signal palette (from teenage.engineering root CSS) */
+  --te-black:   #0f0e12;
+  --te-white:   #f5f5f5;
+  --te-paper:   #f2f1ec;
+  --te-putty:   #dedcd5;
+  --te-orange:  #f05a24;  /* Deck A / Primary TE accent */
+  --te-blue:    #0071bb;  /* Deck B / Secondary TE accent */
+  --te-green:   #006837;  /* Sync / Positive */
+  --te-red:     #b81d13;  /* Record / Clip / Danger */
+  --te-yellow:  #fab413;  /* Cue / Bar 1 / Warning */
+
+  /* Bright LCD phosphor variants (for inside obsidian glass windows) */
+  --lcd-bg:     #090a0d;
+  --lcd-grid:   #191b22;
+  --lcd-white:  #f4f4f0;
+  --lcd-orange: #ff5e2b;
+  --lcd-blue:   #38bdf8;
+  --lcd-green:  #4ade80;
+  --lcd-yellow: #fbbf24;
+  --lcd-red:    #ef4444;
+
+  /* 4-Stem consistent palette (waveform lanes + hardware fader caps) */
+  --stem-drums:  #f59e0b;
+  --stem-bass:   #f43f5e;
+  --stem-other:  #06b6d4;
+  --stem-vocals: #c084fc;
+
+  /* Typography — Swiss industrial sans + DIN silkscreen + tabular mono */
+  --font-sans: "Inter", "Helvetica Neue", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-silk: "Barlow Condensed", "DIN Alternate", "Helvetica Neue", sans-serif;
+  --font-mono: "JetBrains Mono", "JetBrainsMono Nerd Font Mono", "SF Mono", Menlo, monospace;
+
+  /* Machined geometry — 0px structural corners, physical keycap lip */
+  --radius-chassis: 0px;
+  --radius-lcd:     0px;
+  --radius-keycap:  1px;
+  --border-hair:    1px;
+  --keycap-lip:     inset 0 -2px 0 rgba(0, 0, 0, 0.45);
+  --keycap-press:   inset 0 1px 0 rgba(0, 0, 0, 0.55);
+}
+
+/* ---- Dark Booth Edition (default) ---- */
+:root,
+[data-theme='ko2-dark'] {
+  --bg:        #101114;
+  --chassis:   #191b20;
+  --panel:     #1f2128;
+  --keycap:    #272932;
+  --keycap-hi: #323540;
+  --line:      #32353f;
+  --line-hi:   #4b505e;
+  --ink:       #ecebe6;
+  --dim:       #888c99;
+  --deck-a:    var(--te-orange);
+  --deck-b:    var(--lcd-blue);
+}
+
+/* ---- EP-133 Hardware Twin Edition (Light Putty Aluminum + Obsidian LCDs) ---- */
+[data-theme='ko2-light'] {
+  --bg:        #cfcdc5;
+  --chassis:   #dedcd5;  /* physical EP-133 chassis color */
+  --panel:     #f2f1ec;  /* TE manual paper */
+  --keycap:    #272727;  /* physical dark K.O. II keycaps */
+  --keycap-hi: #3a3b42;
+  --line:      #0f0e12;  /* crisp TE black hairlines */
+  --line-hi:   #0f0e12;
+  --ink:       #0f0e12;
+  --dim:       #5c5c60;
+  --deck-a:    var(--te-orange);
+  --deck-b:    var(--te-blue);
+}
+
+/* Example tactile TE keycap primitive */
+.te-keycap {
+  font-family: var(--font-silk);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: var(--radius-keycap);
+  border: var(--border-hair) solid var(--line);
+  background: var(--keycap);
+  color: #f4f4f0;
+  box-shadow: var(--keycap-lip);
+  transition: transform 40ms ease, background-color 60ms ease;
+}
+.te-keycap:active,
+.te-keycap.pressed {
+  transform: translateY(1.5px);
+  box-shadow: var(--keycap-press);
+}
+
+/* Example Winamp-meets-EP-133 Obsidian LCD readout window */
+.te-lcd {
+  background: var(--lcd-bg);
+  border: 1px solid #000;
+  border-radius: var(--radius-lcd);
+  color: var(--lcd-white);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}

@@ -1,0 +1,1191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>vibedeck × ep–133 k.o. ii — field manual</title>
+<style>
+  /* Teenage Engineering authentic token palette (from teenage.engineering root CSS + EP-133 hardware) */
+  :root {
+    --paper: #f2f1ec;        /* warm engineering stock */
+    --chassis: #dedcd5;      /* EP-133 molded putty grey */
+    --surface: #ffffff;
+    --ink: #0f0e12;          /* --te-black */
+    --charcoal: #272727;     /* --te-grey-1000 */
+    --grey-900: #4d4d4d;
+    --grey-600: #767676;
+    --grey-300: #b2b2b2;
+    --grey-200: #cccccc;
+    --grey-100: #e5e5e5;
+    --orange: #f05a24;       /* --te-orange (K.O. II signature) */
+    --blue: #0071bb;         /* --te-blue */
+    --green: #006837;        /* --te-green */
+    --red: #b81d13;          /* --te-red */
+    --yellow: #fab413;       /* --te-yellow */
+    --violet: #7c3aed;       /* stem VOX / loop accent */
+    --cyan: #0891b2;         /* stem OTH accent */
+    --sans: "Helvetica Neue", "DIN Alternate", -apple-system, BlinkMacSystemFont, sans-serif;
+    --cond: "DIN Alternate", "Helvetica Neue", sans-serif;
+    --mono: "JetBrainsMono Nerd Font Mono", "SF Mono", Menlo, monospace;
+  }
+
+  @page {
+    size: letter portrait;
+    margin: 0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #d8d7d2;
+    color: var(--ink);
+    font-family: var(--sans);
+    font-weight: 300;
+    -webkit-font-smoothing: antialiased;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .sheet {
+    width: 8.5in;
+    height: 11in;
+    background: var(--paper);
+    margin: 0 auto;
+    padding: 0.38in 0.42in 0.34in;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+    break-after: page;
+  }
+  .sheet:last-child { page-break-after: auto; break-after: auto; }
+
+  /* Subtle TE corner registration marks */
+  .reg { position: absolute; width: 10px; height: 10px; pointer-events: none; }
+  .reg.tl { top: 12px; left: 12px; border-top: 1px solid var(--ink); border-left: 1px solid var(--ink); }
+  .reg.tr { top: 12px; right: 12px; border-top: 1px solid var(--ink); border-right: 1px solid var(--ink); }
+  .reg.bl { bottom: 12px; left: 12px; border-bottom: 1px solid var(--ink); border-left: 1px solid var(--ink); }
+  .reg.br { bottom: 12px; right: 12px; border-bottom: 1px solid var(--ink); border-right: 1px solid var(--ink); }
+
+  /* Masthead */
+  .masthead {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    border-bottom: 1.5px solid var(--ink);
+    padding-bottom: 8px;
+    gap: 12px;
+  }
+  .brand-kicker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 7.2pt;
+    letter-spacing: 0.09em;
+    color: var(--grey-900);
+    margin-bottom: 2px;
+    white-space: nowrap;
+  }
+  .pill-orange, .pill-black { white-space: nowrap; flex-shrink: 0; }
+  .pill-orange {
+    background: var(--orange);
+    color: #fff;
+    padding: 1px 6px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    font-size: 7pt;
+  }
+  .pill-black {
+    background: var(--ink);
+    color: #fff;
+    padding: 1px 6px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    font-size: 7pt;
+  }
+  h1 {
+    font-family: var(--sans);
+    font-weight: 200;
+    font-size: 23pt;
+    line-height: 1.02;
+    letter-spacing: -0.02em;
+    text-transform: lowercase;
+    color: var(--ink);
+  }
+  h1 strong { font-weight: 500; }
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(4, auto);
+    border: 1px solid var(--ink);
+    background: var(--surface);
+    font-family: var(--mono);
+    font-size: 6.8pt;
+  }
+  .meta-cell {
+    padding: 3px 7px;
+    border-right: 1px solid var(--grey-200);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .meta-cell:last-child { border-right: none; }
+  .meta-cell .k { color: var(--grey-600); font-size: 5.8pt; letter-spacing: 0.08em; }
+  .meta-cell .v { color: var(--ink); font-weight: 700; }
+
+  /* TE Section Headings: ((1)) lowercase title */
+  .sec-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 3px;
+    margin-bottom: 6px;
+  }
+  .sec-num {
+    font-family: var(--mono);
+    font-size: 8.5pt;
+    font-weight: 700;
+    color: var(--orange);
+    letter-spacing: -0.02em;
+  }
+  .sec-title {
+    font-size: 10.5pt;
+    font-weight: 300;
+    letter-spacing: 0.01em;
+    text-transform: lowercase;
+    color: var(--ink);
+  }
+  .sec-sub {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 6.8pt;
+    color: var(--grey-600);
+    letter-spacing: 0.04em;
+  }
+
+  /* Hardware hero block */
+  .hw-hero {
+    display: grid;
+    grid-template-columns: 1.48fr 1fr;
+    gap: 10px;
+    align-items: stretch;
+  }
+  .hw-diagram {
+    background: var(--surface);
+    border: 1px solid var(--ink);
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .hw-notes {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .callout-card {
+    background: var(--surface);
+    border: 1px solid var(--ink);
+    padding: 7px 9px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .callout-card.dark {
+    background: var(--ink);
+    color: #f4f4f0;
+  }
+  .callout-title {
+    font-family: var(--mono);
+    font-size: 7pt;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .callout-card.dark .callout-title { color: var(--orange); }
+  .callout-body {
+    font-size: 7.7pt;
+    line-height: 1.38;
+    color: var(--charcoal);
+  }
+  .callout-card.dark .callout-body { color: #d6d5d0; }
+
+  /* Inline TE keycap */
+  .cap {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 6.6pt;
+    font-weight: 700;
+    padding: 0.5px 4px;
+    border: 1px solid var(--ink);
+    background: var(--chassis);
+    color: var(--ink);
+    box-shadow: inset 0 -1.5px 0 rgba(0,0,0,0.28);
+    line-height: 1.35;
+    vertical-align: baseline;
+  }
+  .cap.org { background: var(--orange); color: #fff; border-color: var(--ink); }
+  .cap.blk { background: var(--charcoal); color: #fff; border-color: #000; }
+  .cap.blu { background: var(--blue); color: #fff; border-color: var(--ink); }
+  .cap.red { background: var(--red); color: #fff; border-color: var(--ink); }
+  .callout-card.dark .cap { background: #2c2c32; color: #fff; border-color: #555; }
+  .callout-card.dark .cap.org { background: var(--orange); border-color: var(--orange); }
+
+  /* 4-Group Pad Matrix (physical calculator layout: 7 8 9 top -> . 0 ENT bottom) */
+  .groups-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .grp-card {
+    border: 1px solid var(--ink);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+  }
+  .grp-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--ink);
+    font-family: var(--mono);
+    font-size: 7pt;
+    font-weight: 700;
+    color: #fff;
+    background: var(--ink);
+  }
+  .grp-card.ga .grp-head { background: var(--orange); }
+  .grp-card.gb .grp-head { background: var(--charcoal); }
+  .grp-card.gc .grp-head { background: var(--blue); }
+  .grp-card.gd .grp-head { background: #1e3a5f; }
+  .grp-sub {
+    padding: 2.5px 6px;
+    font-family: var(--mono);
+    font-size: 6pt;
+    letter-spacing: 0.05em;
+    color: var(--grey-900);
+    background: var(--paper);
+    border-bottom: 1px solid var(--grey-200);
+    text-transform: uppercase;
+  }
+  .pad-matrix {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 3px;
+    padding: 5px;
+    background: var(--chassis);
+    flex: 1;
+  }
+  .pad {
+    background: #1d1e22;
+    color: #f4f4f0;
+    border: 1px solid #0f0e12;
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.55);
+    padding: 3.5px 3px 4px;
+    min-height: 41px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .pad-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: var(--mono);
+    font-size: 6pt;
+  }
+  .pad-lbl { font-weight: 700; color: #fff; font-size: 7.2pt; }
+  .pad-note { color: #8c8f99; font-size: 5.5pt; }
+  .pad-fn {
+    font-family: var(--cond);
+    font-size: 6.4pt;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    margin-top: 2px;
+  }
+  .pad.t-play { background: var(--orange); color: #fff; }
+  .pad.t-play .pad-note { color: rgba(255,255,255,0.75); }
+  .pad.t-play-b { background: var(--blue); color: #fff; }
+  .pad.t-play-b .pad-note { color: rgba(255,255,255,0.75); }
+  .pad.t-cue { border-top: 2.5px solid var(--yellow); }
+  .pad.t-sync { border-top: 2.5px solid #22c55e; }
+  .pad.t-hc1 { border-top: 2.5px solid #f43f5e; }
+  .pad.t-hc2 { border-top: 2.5px solid #f59e0b; }
+  .pad.t-hc3 { border-top: 2.5px solid #10b981; }
+  .pad.t-hc4 { border-top: 2.5px solid #3b82f6; }
+  .pad.t-fx { border-top: 2.5px solid #a78bfa; }
+  .pad.t-echo { border-top: 2.5px solid #fb7185; }
+  .pad.t-loop { border-top: 2.5px solid #c084fc; }
+  .pad.t-latch { border-top: 2.5px solid var(--yellow); }
+  .pad.t-key { border-top: 2.5px solid var(--cyan); }
+
+  /* System codes strip */
+  .codes-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border: 1px solid var(--ink);
+    background: var(--surface);
+  }
+  .code-cell {
+    padding: 5px 8px;
+    border-right: 1px solid var(--grey-200);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .code-cell:last-child { border-right: none; }
+  .code-num {
+    font-family: var(--mono);
+    font-size: 11.5pt;
+    font-weight: 700;
+    background: var(--ink);
+    color: var(--orange);
+    padding: 2px 5px;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+  .code-txt { font-size: 6.9pt; line-height: 1.25; }
+  .code-txt strong { display: block; font-family: var(--mono); font-size: 6.7pt; letter-spacing: 0.04em; text-transform: uppercase; }
+  .code-txt span { color: var(--grey-600); }
+
+  /* Page 2 specific blocks */
+  .sig-box {
+    background: var(--surface);
+    border: 1px solid var(--ink);
+    padding: 8px 10px;
+  }
+
+  .keys-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 0.92fr;
+    gap: 8px;
+  }
+  .key-panel {
+    border: 1px solid var(--ink);
+    background: var(--surface);
+  }
+  .key-panel-hd {
+    padding: 3px 7px;
+    font-family: var(--mono);
+    font-size: 7pt;
+    font-weight: 700;
+    color: #fff;
+    background: var(--ink);
+    letter-spacing: 0.08em;
+    display: flex;
+    justify-content: space-between;
+  }
+  .key-panel.ka .key-panel-hd { background: var(--orange); }
+  .key-panel.kb .key-panel-hd { background: var(--blue); }
+  .key-tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 7.1pt;
+  }
+  .key-tbl tr { border-bottom: 1px solid var(--grey-100); }
+  .key-tbl tr:last-child { border-bottom: none; }
+  .key-tbl td { padding: 2.6px 6px; }
+  .key-tbl td:first-child { font-family: var(--mono); font-weight: 700; white-space: nowrap; width: 42%; }
+  .key-tbl td:last-child { color: var(--charcoal); }
+
+  .recipes-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .recipe {
+    border: 1px solid var(--ink);
+    background: var(--surface);
+    padding: 7px 9px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .recipe-hd {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--grey-100);
+    padding-bottom: 3px;
+  }
+  .recipe-title {
+    font-family: var(--mono);
+    font-size: 7.4pt;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .recipe-tag {
+    font-family: var(--mono);
+    font-size: 6pt;
+    padding: 1px 5px;
+    background: var(--paper);
+    border: 1px solid var(--grey-300);
+    color: var(--grey-900);
+    font-weight: 700;
+  }
+  .recipe-steps {
+    font-size: 7.3pt;
+    line-height: 1.38;
+    color: var(--charcoal);
+  }
+  .recipe-steps b { color: var(--ink); font-weight: 600; }
+
+  /* Bottom visual reference strip (Stems + Arrangement + Camelot) */
+  .ref-strip {
+    display: grid;
+    grid-template-columns: 1.15fr 1.15fr 0.85fr;
+    gap: 8px;
+  }
+  .ref-box {
+    border: 1px solid var(--ink);
+    background: var(--surface);
+    padding: 6px 8px;
+  }
+  .ref-hd {
+    font-family: var(--mono);
+    font-size: 6.7pt;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    color: var(--grey-600);
+    margin-bottom: 5px;
+    text-transform: uppercase;
+  }
+  .swatch-list { display: flex; flex-direction: column; gap: 3.5px; }
+  .swatch-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 7.1pt;
+  }
+  .sw { width: 18px; height: 9px; border: 1px solid rgba(0,0,0,0.25); flex-shrink: 0; }
+  .sw-lbl { font-family: var(--mono); font-weight: 700; font-size: 6.8pt; min-width: 44px; }
+  .sw-desc { color: var(--grey-900); font-size: 6.8pt; }
+
+  /* TE Super-Segment Iconography Matrix (Page 1 bottom) */
+  .icon-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    border: 1px solid var(--ink);
+    background: #0f0e12;
+  }
+  .icon-cell {
+    padding: 8px 6px 7px;
+    border-right: 1px solid #27272e;
+    border-bottom: 1px solid #27272e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    text-align: center;
+  }
+  .icon-cell:nth-child(6n) { border-right: none; }
+  .icon-cell:nth-last-child(-n+6) { border-bottom: none; }
+  .icon-lbl {
+    font-family: var(--mono);
+    font-size: 6.4pt;
+    font-weight: 700;
+    color: #f4f4f0;
+    letter-spacing: 0.08em;
+  }
+  .icon-sub {
+    font-family: var(--mono);
+    font-size: 5.5pt;
+    color: #8c8f99;
+  }
+  .inline-ico { display: inline-block; vertical-align: -1.5px; margin-right: 2px; }
+
+  /* Footer rule */
+  .sheet-foot {
+    margin-top: auto;
+    border-top: 1px solid var(--ink);
+    padding-top: 4px;
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 6.4pt;
+    color: var(--grey-600);
+    letter-spacing: 0.06em;
+  }
+</style>
+</head>
+<body>
+
+<!-- ====================================================================== -->
+<!-- PAGE 1: EP-133 K.O. II HARDWARE MAP + COMPLETE 4-GROUP PAD MATRIX      -->
+<!-- ====================================================================== -->
+<section class="sheet">
+  <div class="reg tl"></div><div class="reg tr"></div><div class="reg bl"></div><div class="reg br"></div>
+
+  <div class="masthead">
+    <div>
+      <div class="brand-kicker">
+        <span class="pill-orange">EP–133 × VIBEDECK</span>
+        <span class="pill-black">QUICK REFERENCE</span>
+        <span>DUAL-DECK STEM CONTROLLER MAP</span>
+      </div>
+      <h1>vibedeck <strong>k.o. ii</strong> field manual</h1>
+    </div>
+    <div class="meta-grid">
+      <div class="meta-cell"><span class="k">DOC</span><span class="v">VD-133</span></div>
+      <div class="meta-cell"><span class="k">REV</span><span class="v">v1.2</span></div>
+      <div class="meta-cell"><span class="k">MIDI CH</span><span class="v">01 (USB)</span></div>
+      <div class="meta-cell"><span class="k">NOTES</span><span class="v">36 – 83</span></div>
+    </div>
+  </div>
+
+  <!-- ((1)) Hardware orthographic map -->
+  <div>
+    <div class="sec-head">
+      <span class="sec-num">((1))</span>
+      <span class="sec-title">hardware surface &amp; hybrid lcd overview</span>
+      <span class="sec-sub">USB-C CLASS-COMPLIANT MIDI · 48 PADS ACROSS GROUPS A–D</span>
+    </div>
+    <div class="hw-hero">
+      <div class="hw-diagram">
+        <!-- Precision orthographic vector drawing of the EP-133 K.O. II -->
+        <svg viewBox="0 0 540 228" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg">
+          <!-- Top ports label callouts -->
+          <g font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="7.5" fill="#4d4d4d">
+            <line x1="72" y1="16" x2="72" y2="26" stroke="#0f0e12" stroke-width="1"/>
+            <text x="72" y="12" text-anchor="middle" font-weight="700" fill="#0f0e12">LINE OUT → SPKR</text>
+            <line x1="168" y1="16" x2="168" y2="26" stroke="#767676" stroke-width="1"/>
+            <text x="168" y="12" text-anchor="middle">LINE IN</text>
+            <line x1="252" y1="16" x2="252" y2="26" stroke="#767676" stroke-width="1"/>
+            <text x="252" y="12" text-anchor="middle">SYNC / MIDI TRS</text>
+            <line x1="364" y1="16" x2="364" y2="26" stroke="#f05a24" stroke-width="1.6"/>
+            <text x="364" y="12" text-anchor="middle" font-weight="700" fill="#f05a24">USB-C → MAC (MIDI + PWR)</text>
+            <line x1="472" y1="16" x2="472" y2="26" stroke="#0f0e12" stroke-width="1"/>
+            <text x="472" y="12" text-anchor="middle" font-weight="700" fill="#0f0e12">PWR ON</text>
+          </g>
+
+          <!-- Main chassis -->
+          <rect x="20" y="26" width="500" height="194" fill="#dedcd5" stroke="#0f0e12" stroke-width="1.5"/>
+          <!-- Dark top bezel panel -->
+          <rect x="20" y="26" width="500" height="66" fill="#232429" stroke="#0f0e12" stroke-width="1.2"/>
+
+          <!-- Left speaker grille (dot matrix) -->
+          <g fill="#44464f">
+            <circle cx="42" cy="40" r="1.4"/><circle cx="50" cy="40" r="1.4"/><circle cx="58" cy="40" r="1.4"/><circle cx="66" cy="40" r="1.4"/><circle cx="74" cy="40" r="1.4"/><circle cx="82" cy="40" r="1.4"/><circle cx="90" cy="40" r="1.4"/>
+            <circle cx="42" cy="48" r="1.4"/><circle cx="50" cy="48" r="1.4"/><circle cx="58" cy="48" r="1.4"/><circle cx="66" cy="48" r="1.4"/><circle cx="74" cy="48" r="1.4"/><circle cx="82" cy="48" r="1.4"/><circle cx="90" cy="48" r="1.4"/>
+            <circle cx="42" cy="56" r="1.4"/><circle cx="50" cy="56" r="1.4"/><circle cx="58" cy="56" r="1.4"/><circle cx="66" cy="56" r="1.4"/><circle cx="74" cy="56" r="1.4"/><circle cx="82" cy="56" r="1.4"/><circle cx="90" cy="56" r="1.4"/>
+            <circle cx="42" cy="64" r="1.4"/><circle cx="50" cy="64" r="1.4"/><circle cx="58" cy="64" r="1.4"/><circle cx="66" cy="64" r="1.4"/><circle cx="74" cy="64" r="1.4"/><circle cx="82" cy="64" r="1.4"/><circle cx="90" cy="64" r="1.4"/>
+            <circle cx="42" cy="72" r="1.4"/><circle cx="50" cy="72" r="1.4"/><circle cx="58" cy="72" r="1.4"/><circle cx="66" cy="72" r="1.4"/><circle cx="74" cy="72" r="1.4"/><circle cx="82" cy="72" r="1.4"/><circle cx="90" cy="72" r="1.4"/>
+          </g>
+          <text x="36" y="86" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="6.5" fill="#9a9ca6" font-weight="700">EP–133 K.O. II</text>
+
+          <!-- Super-Segment Hybrid LCD Display (showing vibedeck telemetry!) -->
+          <rect x="112" y="34" width="218" height="50" fill="#090a0d" stroke="#44464f" stroke-width="1"/>
+          <text x="120" y="45" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="6.5" fill="#f05a24" font-weight="700">USB MIDI CH01</text>
+          <text x="208" y="45" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="6.5" fill="#4ade80" font-weight="700">SYNC LOCK</text>
+          <text x="278" y="45" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="6.5" fill="#38bdf8" font-weight="700">4-STEMS</text>
+          <text x="120" y="67" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="16" fill="#f4f4f0" font-weight="700" letter-spacing="0.04em">127.0</text>
+          <text x="180" y="62" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="6.5" fill="#9a9ca6">BPM</text>
+          <rect x="204" y="52" width="24" height="15" fill="#f05a24"/>
+          <text x="216" y="63" text-anchor="middle" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="9" fill="#090a0d" font-weight="800">9A</text>
+          <text x="235" y="63" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="8" fill="#fab413" font-weight="700">BAR 17.1</text>
+          <!-- Mini LCD meter bars -->
+          <g fill="#f05a24">
+            <rect x="120" y="74" width="12" height="4"/><rect x="135" y="74" width="12" height="4"/><rect x="150" y="74" width="12" height="4"/>
+          </g>
+          <g fill="#38bdf8">
+            <rect x="165" y="74" width="12" height="4"/><rect x="180" y="74" width="12" height="4"/>
+          </g>
+          <text x="204" y="78" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="6.3" fill="#e5e5e5">BUILD → DROP IN 2.3</text>
+
+          <!-- Knobs: Volume, Knob X (orange), Knob Y (dark) -->
+          <g>
+            <circle cx="364" cy="58" r="14" fill="#d8d6cf" stroke="#0f0e12" stroke-width="1.2"/>
+            <line x1="364" y1="58" x2="364" y2="46" stroke="#0f0e12" stroke-width="2"/>
+            <text x="364" y="83" text-anchor="middle" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="6.2" fill="#d8d6cf" font-weight="700">VOL</text>
+
+            <circle cx="416" cy="58" r="16" fill="#f05a24" stroke="#0f0e12" stroke-width="1.4"/>
+            <line x1="416" y1="58" x2="426" y2="49" stroke="#fff" stroke-width="2.2"/>
+            <text x="416" y="83" text-anchor="middle" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="6.2" fill="#f05a24" font-weight="700">KNOB X</text>
+
+            <circle cx="472" cy="58" r="16" fill="#3a3c44" stroke="#0f0e12" stroke-width="1.4"/>
+            <line x1="472" y1="58" x2="462" y2="49" stroke="#fff" stroke-width="2.2"/>
+            <text x="472" y="83" text-anchor="middle" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="6.2" fill="#d8d6cf" font-weight="700">KNOB Y</text>
+          </g>
+
+          <!-- Left column: FADER track + handle -->
+          <rect x="34" y="104" width="28" height="104" fill="#ceccc4" stroke="#0f0e12" stroke-width="1"/>
+          <line x1="48" y1="112" x2="48" y2="200" stroke="#0f0e12" stroke-width="2.5"/>
+          <g stroke="#767676" stroke-width="0.7">
+            <line x1="38" y1="118" x2="43" y2="118"/><line x1="53" y1="118" x2="58" y2="118"/>
+            <line x1="38" y1="138" x2="43" y2="138"/><line x1="53" y1="138" x2="58" y2="138"/>
+            <line x1="38" y1="156" x2="43" y2="156"/><line x1="53" y1="156" x2="58" y2="156"/>
+            <line x1="38" y1="174" x2="43" y2="174"/><line x1="53" y1="174" x2="58" y2="174"/>
+            <line x1="38" y1="194" x2="43" y2="194"/><line x1="53" y1="194" x2="58" y2="194"/>
+          </g>
+          <rect x="37" y="148" width="22" height="14" fill="#232429" stroke="#0f0e12" stroke-width="1"/>
+          <line x1="39" y1="155" x2="57" y2="155" stroke="#f05a24" stroke-width="2"/>
+          <text x="48" y="216" text-anchor="middle" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="6" fill="#0f0e12" font-weight="700">FADER</text>
+
+          <!-- Group selector column: A B C D -->
+          <g font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-weight="700" font-size="6.4">
+            <rect x="70" y="104" width="42" height="22" fill="#f05a24" stroke="#0f0e12" stroke-width="1"/>
+            <text x="91" y="117.5" text-anchor="middle" fill="#fff">A · DK A</text>
+
+            <rect x="70" y="131" width="42" height="22" fill="#272727" stroke="#0f0e12" stroke-width="1"/>
+            <text x="91" y="144.5" text-anchor="middle" fill="#fff">B · LP A</text>
+
+            <rect x="70" y="158" width="42" height="22" fill="#0071bb" stroke="#0f0e12" stroke-width="1"/>
+            <text x="91" y="171.5" text-anchor="middle" fill="#fff">C · DK B</text>
+
+            <rect x="70" y="185" width="42" height="22" fill="#1e3a5f" stroke="#0f0e12" stroke-width="1"/>
+            <text x="91" y="198.5" text-anchor="middle" fill="#fff">D · LP B</text>
+          </g>
+
+          <!-- Center 3x4 Pad Grid (showing Group A primary legends) -->
+          <g font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace">
+            <!-- Row 1: 7 8 9 -->
+            <rect x="122" y="104" width="66" height="23" fill="#1d1e22" stroke="#0f0e12"/><rect x="122" y="104" width="66" height="2.5" fill="#a78bfa"/>
+            <text x="126" y="114" font-size="7" fill="#fff" font-weight="700">7</text><text x="184" y="114" text-anchor="end" font-size="5.5" fill="#9a9ca6">#45</text><text x="126" y="123" font-size="6.2" fill="#d8b4fe" font-weight="700">DELAY</text>
+
+            <rect x="193" y="104" width="66" height="23" fill="#1d1e22" stroke="#0f0e12"/><rect x="193" y="104" width="66" height="2.5" fill="#a78bfa"/>
+            <text x="197" y="114" font-size="7" fill="#fff" font-weight="700">8</text><text x="255" y="114" text-anchor="end" font-size="5.5" fill="#9a9ca6">#46</text><text x="197" y="123" font-size="6.2" fill="#d8b4fe" font-weight="700">DLY FRAC</text>
+
+            <rect x="264" y="104" width="66" height="23" fill="#1d1e22" stroke="#0f0e12"/><rect x="264" y="104" width="66" height="2.5" fill="#22d3ee"/>
+            <text x="268" y="114" font-size="7" fill="#fff" font-weight="700">9</text><text x="326" y="114" text-anchor="end" font-size="5.5" fill="#9a9ca6">#47</text><text x="268" y="123" font-size="6.2" fill="#67e8f9" font-weight="700">REVERB</text>
+
+            <!-- Row 2: 4 5 6 -->
+            <rect x="122" y="131" width="66" height="23" fill="#1d1e22" stroke="#0f0e12"/><rect x="122" y="131" width="66" height="2.5" fill="#10b981"/>
+            <text x="126" y="141" font-size="7" fill="#fff" font-weight="700">4</text><text x="184" y="141" text-anchor="end" font-size="5.5" fill="#9a9ca6">#42</text><text x="126" y="150" font-size="6.2" fill="#6ee7b7" font-weight="700">HOT CUE 3</text>
+
+            <rect x="193" y="131" width="66" height="23" fill="#1d1e22" stroke="#0f0e12"/><rect x="193" y="131" width="66" height="2.5" fill="#3b82f6"/>
+            <text x="197" y="141" font-size="7" fill="#fff" font-weight="700">5</text><text x="255" y="141" text-anchor="end" font-size="5.5" fill="#9a9ca6">#43</text><text x="197" y="150" font-size="6.2" fill="#93c5fd" font-weight="700">HOT CUE 4</text>
+
+            <rect x="264" y="131" width="66" height="23" fill="#1d1e22" stroke="#0f0e12"/><rect x="264" y="131" width="66" height="2.5" fill="#fb7185"/>
+            <text x="268" y="141" font-size="7" fill="#fff" font-weight="700">6</text><text x="326" y="141" text-anchor="end" font-size="5.5" fill="#9a9ca6">#44</text><text x="268" y="150" font-size="6.2" fill="#fda4af" font-weight="700">ECHO OUT</text>
+
+            <!-- Row 3: 1 2 3 -->
+            <rect x="122" y="158" width="66" height="23" fill="#1d1e22" stroke="#0f0e12"/><rect x="122" y="158" width="66" height="2.5" fill="#4ade80"/>
+            <text x="126" y="168" font-size="7" fill="#fff" font-weight="700">1</text><text x="184" y="168" text-anchor="end" font-size="5.5" fill="#9a9ca6">#39</text><text x="126" y="177" font-size="6.2" fill="#86efac" font-weight="700">SYNC</text>
+
+            <rect x="193" y="158" width="66" height="23" fill="#1d1e22" stroke="#0f0e12"/><rect x="193" y="158" width="66" height="2.5" fill="#f43f5e"/>
+            <text x="197" y="168" font-size="7" fill="#fff" font-weight="700">2</text><text x="255" y="168" text-anchor="end" font-size="5.5" fill="#9a9ca6">#40</text><text x="197" y="177" font-size="6.2" fill="#fda4af" font-weight="700">HOT CUE 1</text>
+
+            <rect x="264" y="158" width="66" height="23" fill="#1d1e22" stroke="#0f0e12"/><rect x="264" y="158" width="66" height="2.5" fill="#f59e0b"/>
+            <text x="268" y="168" font-size="7" fill="#fff" font-weight="700">3</text><text x="326" y="168" text-anchor="end" font-size="5.5" fill="#9a9ca6">#41</text><text x="268" y="177" font-size="6.2" fill="#fcd34d" font-weight="700">HOT CUE 2</text>
+
+            <!-- Row 4: . 0 ENTER -->
+            <rect x="122" y="185" width="66" height="23" fill="#f05a24" stroke="#0f0e12"/>
+            <text x="126" y="195" font-size="8" fill="#fff" font-weight="700">.</text><text x="184" y="195" text-anchor="end" font-size="5.5" fill="#ffe4d6">#36</text><text x="126" y="204" font-size="6.5" fill="#fff" font-weight="700">▶ PLAY</text>
+
+            <rect x="193" y="185" width="66" height="23" fill="#1d1e22" stroke="#0f0e12"/><rect x="193" y="185" width="66" height="2.5" fill="#fab413"/>
+            <text x="197" y="195" font-size="7" fill="#fff" font-weight="700">0</text><text x="255" y="195" text-anchor="end" font-size="5.5" fill="#9a9ca6">#37</text><text x="197" y="204" font-size="6.2" fill="#fde68a" font-weight="700">CUE (HOLD)</text>
+
+            <rect x="264" y="185" width="66" height="23" fill="#1d1e22" stroke="#0f0e12"/><rect x="264" y="185" width="66" height="2.5" fill="#fab413"/>
+            <text x="268" y="195" font-size="6.4" fill="#fff" font-weight="700">ENT</text><text x="326" y="195" text-anchor="end" font-size="5.5" fill="#9a9ca6">#38</text><text x="268" y="204" font-size="6.2" fill="#fde68a" font-weight="700">SET CUE</text>
+          </g>
+
+          <!-- Right function keys column -->
+          <g font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace" font-size="6.2" font-weight="700">
+            <rect x="346" y="104" width="46" height="20" fill="#f05a24" stroke="#0f0e12"/><text x="369" y="116" text-anchor="middle" fill="#fff">SOUND</text>
+            <rect x="398" y="104" width="46" height="20" fill="#f05a24" stroke="#0f0e12"/><text x="421" y="116" text-anchor="middle" fill="#fff">MAIN</text>
+            <rect x="450" y="104" width="54" height="20" fill="#f05a24" stroke="#0f0e12"/><text x="477" y="116" text-anchor="middle" fill="#fff">TEMPO</text>
+
+            <rect x="346" y="130" width="46" height="20" fill="#b8b6b0" stroke="#0f0e12"/><text x="369" y="142" text-anchor="middle" fill="#0f0e12">FX</text>
+            <rect x="398" y="130" width="46" height="20" fill="#b8b6b0" stroke="#0f0e12"/><text x="421" y="142" text-anchor="middle" fill="#0f0e12">SAMPLE</text>
+            <rect x="450" y="130" width="54" height="20" fill="#b8b6b0" stroke="#0f0e12"/><text x="477" y="142" text-anchor="middle" fill="#0f0e12">KEYS</text>
+
+            <rect x="346" y="156" width="46" height="20" fill="#b8b6b0" stroke="#0f0e12"/><text x="369" y="168" text-anchor="middle" fill="#0f0e12">SHIFT</text>
+            <rect x="398" y="156" width="46" height="20" fill="#b8b6b0" stroke="#0f0e12"/><text x="421" y="168" text-anchor="middle" fill="#0f0e12">ERASE</text>
+            <rect x="450" y="156" width="54" height="20" fill="#272727" stroke="#0f0e12"/><text x="477" y="168" text-anchor="middle" fill="#fff">−   +</text>
+
+            <rect x="346" y="184" width="74" height="24" fill="#b81d13" stroke="#0f0e12"/><text x="383" y="199" text-anchor="middle" fill="#fff" font-size="7">● REC</text>
+            <rect x="426" y="184" width="78" height="24" fill="#272727" stroke="#0f0e12"/><text x="465" y="199" text-anchor="middle" fill="#fff" font-size="7">▶ PLAY</text>
+          </g>
+        </svg>
+      </div>
+
+      <div class="hw-notes">
+        <div class="callout-card dark">
+          <div class="callout-title">
+            <svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#f05a24"/></svg>
+            START HERE (30 SEC)
+          </div>
+          <div class="callout-body">
+            1. Plug <span class="cap org">USB-C</span> into Mac &amp; flip <b>PWR ON</b>.<br/>
+            2. Load empty project (<span class="cap">MAIN</span>+<span class="cap blk">6..9</span>) or set pad sound to <b>000</b> so pads stay silent.<br/>
+            3. In vibedeck MIDI panel click <span class="cap org">K.O. II PRESET</span>.<br/>
+            4. Tap Group <span class="cap org">A</span> pad <span class="cap blk">.</span> → Deck A plays immediately.
+          </div>
+        </div>
+        <div class="callout-card">
+          <div class="callout-title">
+            <svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" fill="none" stroke="#0f0e12" stroke-width="1.5"/><line x1="3" y1="5" x2="7" y2="5" stroke="#f05a24" stroke-width="1.5"/></svg>
+            FADER &amp; KNOB DISCOVERY
+          </div>
+          <div class="callout-body">
+            Pads emit fixed notes <b>36–83</b> on Ch 1. To check what your <b>FADER</b> or <b>X/Y KNOBS</b> emit on your OS version, click <span class="cap">WATCH</span> in the MIDI panel and move them — anything logged binds cleanly via <span class="cap">LEARN</span> to crossfader, filter, tempo, or 3-band EQ.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ((2)) Complete 4-Group Pad Matrix -->
+  <div>
+    <div class="sec-head">
+      <span class="sec-num">((2))</span>
+      <span class="sec-title">complete 4-group pad matrix</span>
+      <span class="sec-sub">ORIENTED IDENTICALLY TO PHYSICAL PAD LAYOUT (TOP: 7 8 9 · BOTTOM: . 0 ENT)</span>
+    </div>
+    <div class="groups-grid">
+      <!-- GROUP A -->
+      <div class="grp-card ga">
+        <div class="grp-head"><span>GROUP A</span><span>#36–47</span></div>
+        <div class="grp-sub">deck a · transport, cues, fx</div>
+        <div class="pad-matrix">
+          <div class="pad t-fx"><div class="pad-top"><span class="pad-lbl">7</span><span class="pad-note">45</span></div><div class="pad-fn">Delay</div></div>
+          <div class="pad t-fx"><div class="pad-top"><span class="pad-lbl">8</span><span class="pad-note">46</span></div><div class="pad-fn">Dly Frac</div></div>
+          <div class="pad t-key"><div class="pad-top"><span class="pad-lbl">9</span><span class="pad-note">47</span></div><div class="pad-fn">Reverb</div></div>
+
+          <div class="pad t-hc3"><div class="pad-top"><span class="pad-lbl">4</span><span class="pad-note">42</span></div><div class="pad-fn">HotCue 3</div></div>
+          <div class="pad t-hc4"><div class="pad-top"><span class="pad-lbl">5</span><span class="pad-note">43</span></div><div class="pad-fn">HotCue 4</div></div>
+          <div class="pad t-echo"><div class="pad-top"><span class="pad-lbl">6</span><span class="pad-note">44</span></div><div class="pad-fn">Echo Out</div></div>
+
+          <div class="pad t-sync"><div class="pad-top"><span class="pad-lbl">1</span><span class="pad-note">39</span></div><div class="pad-fn">Sync</div></div>
+          <div class="pad t-hc1"><div class="pad-top"><span class="pad-lbl">2</span><span class="pad-note">40</span></div><div class="pad-fn">HotCue 1</div></div>
+          <div class="pad t-hc2"><div class="pad-top"><span class="pad-lbl">3</span><span class="pad-note">41</span></div><div class="pad-fn">HotCue 2</div></div>
+
+          <div class="pad t-play"><div class="pad-top"><span class="pad-lbl">.</span><span class="pad-note">36</span></div><div class="pad-fn">▶ Play A</div></div>
+          <div class="pad t-cue"><div class="pad-top"><span class="pad-lbl">0</span><span class="pad-note">37</span></div><div class="pad-fn">Cue Hold</div></div>
+          <div class="pad t-cue"><div class="pad-top"><span class="pad-lbl">ENT</span><span class="pad-note">38</span></div><div class="pad-fn">Set Cue</div></div>
+        </div>
+      </div>
+
+      <!-- GROUP B -->
+      <div class="grp-card gb">
+        <div class="grp-head"><span>GROUP B</span><span>#48–59</span></div>
+        <div class="grp-sub">deck a · loops, rolls, setters</div>
+        <div class="pad-matrix">
+          <div class="pad t-loop"><div class="pad-top"><span class="pad-lbl">7</span><span class="pad-note">57</span></div><div class="pad-fn">8B Roll</div></div>
+          <div class="pad t-loop"><div class="pad-top"><span class="pad-lbl">8</span><span class="pad-note">58</span></div><div class="pad-fn">Loop Exit</div></div>
+          <div class="pad t-latch"><div class="pad-top"><span class="pad-lbl">9</span><span class="pad-note">59</span></div><div class="pad-fn">Latch</div></div>
+
+          <div class="pad t-loop"><div class="pad-top"><span class="pad-lbl">4</span><span class="pad-note">54</span></div><div class="pad-fn">1B Roll</div></div>
+          <div class="pad t-loop"><div class="pad-top"><span class="pad-lbl">5</span><span class="pad-note">55</span></div><div class="pad-fn">2B Roll</div></div>
+          <div class="pad t-loop"><div class="pad-top"><span class="pad-lbl">6</span><span class="pad-note">56</span></div><div class="pad-fn">4B Roll</div></div>
+
+          <div class="pad t-hc4"><div class="pad-top"><span class="pad-lbl">1</span><span class="pad-note">51</span></div><div class="pad-fn">Set HC 4</div></div>
+          <div class="pad t-key"><div class="pad-top"><span class="pad-lbl">2</span><span class="pad-note">52</span></div><div class="pad-fn">PFL Cue A</div></div>
+          <div class="pad t-fx"><div class="pad-top"><span class="pad-lbl">3</span><span class="pad-note">53</span></div><div class="pad-fn">Key Lock</div></div>
+
+          <div class="pad t-hc1"><div class="pad-top"><span class="pad-lbl">.</span><span class="pad-note">48</span></div><div class="pad-fn">Set HC 1</div></div>
+          <div class="pad t-hc2"><div class="pad-top"><span class="pad-lbl">0</span><span class="pad-note">49</span></div><div class="pad-fn">Set HC 2</div></div>
+          <div class="pad t-hc3"><div class="pad-top"><span class="pad-lbl">ENT</span><span class="pad-note">50</span></div><div class="pad-fn">Set HC 3</div></div>
+        </div>
+      </div>
+
+      <!-- GROUP C -->
+      <div class="grp-card gc">
+        <div class="grp-head"><span>GROUP C</span><span>#60–71</span></div>
+        <div class="grp-sub">deck b · transport, cues, fx</div>
+        <div class="pad-matrix">
+          <div class="pad t-fx"><div class="pad-top"><span class="pad-lbl">7</span><span class="pad-note">69</span></div><div class="pad-fn">Delay</div></div>
+          <div class="pad t-fx"><div class="pad-top"><span class="pad-lbl">8</span><span class="pad-note">70</span></div><div class="pad-fn">Dly Frac</div></div>
+          <div class="pad t-key"><div class="pad-top"><span class="pad-lbl">9</span><span class="pad-note">71</span></div><div class="pad-fn">Reverb</div></div>
+
+          <div class="pad t-hc3"><div class="pad-top"><span class="pad-lbl">4</span><span class="pad-note">66</span></div><div class="pad-fn">HotCue 3</div></div>
+          <div class="pad t-hc4"><div class="pad-top"><span class="pad-lbl">5</span><span class="pad-note">67</span></div><div class="pad-fn">HotCue 4</div></div>
+          <div class="pad t-echo"><div class="pad-top"><span class="pad-lbl">6</span><span class="pad-note">68</span></div><div class="pad-fn">Echo Out</div></div>
+
+          <div class="pad t-sync"><div class="pad-top"><span class="pad-lbl">1</span><span class="pad-note">63</span></div><div class="pad-fn">Sync</div></div>
+          <div class="pad t-hc1"><div class="pad-top"><span class="pad-lbl">2</span><span class="pad-note">64</span></div><div class="pad-fn">HotCue 1</div></div>
+          <div class="pad t-hc2"><div class="pad-top"><span class="pad-lbl">3</span><span class="pad-note">65</span></div><div class="pad-fn">HotCue 2</div></div>
+
+          <div class="pad t-play-b"><div class="pad-top"><span class="pad-lbl">.</span><span class="pad-note">60</span></div><div class="pad-fn">▶ Play B</div></div>
+          <div class="pad t-cue"><div class="pad-top"><span class="pad-lbl">0</span><span class="pad-note">61</span></div><div class="pad-fn">Cue Hold</div></div>
+          <div class="pad t-cue"><div class="pad-top"><span class="pad-lbl">ENT</span><span class="pad-note">62</span></div><div class="pad-fn">Set Cue</div></div>
+        </div>
+      </div>
+
+      <!-- GROUP D -->
+      <div class="grp-card gd">
+        <div class="grp-head"><span>GROUP D</span><span>#72–83</span></div>
+        <div class="grp-sub">deck b · loops, rolls, setters</div>
+        <div class="pad-matrix">
+          <div class="pad t-loop"><div class="pad-top"><span class="pad-lbl">7</span><span class="pad-note">81</span></div><div class="pad-fn">8B Roll</div></div>
+          <div class="pad t-loop"><div class="pad-top"><span class="pad-lbl">8</span><span class="pad-note">82</span></div><div class="pad-fn">Loop Exit</div></div>
+          <div class="pad t-latch"><div class="pad-top"><span class="pad-lbl">9</span><span class="pad-note">83</span></div><div class="pad-fn">Latch</div></div>
+
+          <div class="pad t-loop"><div class="pad-top"><span class="pad-lbl">4</span><span class="pad-note">78</span></div><div class="pad-fn">1B Roll</div></div>
+          <div class="pad t-loop"><div class="pad-top"><span class="pad-lbl">5</span><span class="pad-note">79</span></div><div class="pad-fn">2B Roll</div></div>
+          <div class="pad t-loop"><div class="pad-top"><span class="pad-lbl">6</span><span class="pad-note">80</span></div><div class="pad-fn">4B Roll</div></div>
+
+          <div class="pad t-hc4"><div class="pad-top"><span class="pad-lbl">1</span><span class="pad-note">75</span></div><div class="pad-fn">Set HC 4</div></div>
+          <div class="pad t-key"><div class="pad-top"><span class="pad-lbl">2</span><span class="pad-note">76</span></div><div class="pad-fn">PFL Cue B</div></div>
+          <div class="pad t-fx"><div class="pad-top"><span class="pad-lbl">3</span><span class="pad-note">77</span></div><div class="pad-fn">Key Lock</div></div>
+
+          <div class="pad t-hc1"><div class="pad-top"><span class="pad-lbl">.</span><span class="pad-note">72</span></div><div class="pad-fn">Set HC 1</div></div>
+          <div class="pad t-hc2"><div class="pad-top"><span class="pad-lbl">0</span><span class="pad-note">73</span></div><div class="pad-fn">Set HC 2</div></div>
+          <div class="pad t-hc3"><div class="pad-top"><span class="pad-lbl">ENT</span><span class="pad-note">74</span></div><div class="pad-fn">Set HC 3</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ((3)) K.O. II System Codes -->
+  <div>
+    <div class="sec-head">
+      <span class="sec-num">((3))</span>
+      <span class="sec-title">essential k.o. ii system codes</span>
+      <span class="sec-sub">PRESS [SHIFT] + [ERASE] → TYPE 3-DIGIT CODE → [ENTER]</span>
+    </div>
+    <div class="codes-strip">
+      <div class="code-cell">
+        <div class="code-num">110</div>
+        <div class="code-txt"><strong>MIDI Ch 1 Out</strong><span>Receive all, send on Ch 1 (default)</span></div>
+      </div>
+      <div class="code-cell">
+        <div class="code-num">301</div>
+        <div class="code-txt"><strong>Pad Velocity Hi</strong><span>Soft/hard hits for Sampler pads</span></div>
+      </div>
+      <div class="code-cell">
+        <div class="code-num">000</div>
+        <div class="code-txt"><strong>Silent Pad</strong><span>Hold [SOUND] + dial 000 per pad</span></div>
+      </div>
+      <div class="code-cell">
+        <div class="code-num">511</div>
+        <div class="code-txt"><strong>USB Live Mon</strong><span>OS 2.5+ only · USB audio to Line Out</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ((4)) TE Super-Segment Iconography Legend -->
+  <div>
+    <div class="sec-head">
+      <span class="sec-num">((4))</span>
+      <span class="sec-title">super-segment iconography &amp; deck glyphs</span>
+      <span class="sec-sub">DESIGNED FOR 1:1 VISUAL PARITY WITH THE EP–133 HYBRID LCD</span>
+    </div>
+    <div class="icon-grid">
+      <div class="icon-cell">
+        <svg width="26" height="22" viewBox="0 0 26 22"><polygon points="6,3 22,11 6,19" fill="#f05a24"/></svg>
+        <span class="icon-lbl">PLAY</span><span class="icon-sub">DECK RUN</span>
+      </div>
+      <div class="icon-cell">
+        <svg width="26" height="22" viewBox="0 0 26 22"><circle cx="13" cy="11" r="7" fill="none" stroke="#fab413" stroke-width="2.2"/><circle cx="13" cy="11" r="2.3" fill="#fab413"/></svg>
+        <span class="icon-lbl">CUE</span><span class="icon-sub">ANCHOR POINT</span>
+      </div>
+      <div class="icon-cell">
+        <svg width="26" height="22" viewBox="0 0 26 22"><path d="M4 11 H22 M8 6 L4 11 L8 16 M18 6 L22 11 L18 16" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="square"/></svg>
+        <span class="icon-lbl">SYNC</span><span class="icon-sub">PLL PHASE LOCK</span>
+      </div>
+      <div class="icon-cell">
+        <svg width="26" height="22" viewBox="0 0 26 22"><rect x="6" y="10" width="14" height="9" fill="none" stroke="#a78bfa" stroke-width="2"/><path d="M9 10 V7 A4 4 0 0 1 17 7 V10" fill="none" stroke="#a78bfa" stroke-width="2"/></svg>
+        <span class="icon-lbl">KEY LOCK</span><span class="icon-sub">STRETCH CORE</span>
+      </div>
+      <div class="icon-cell">
+        <svg width="26" height="22" viewBox="0 0 26 22"><rect x="3" y="3" width="20" height="3" fill="#f59e0b"/><rect x="3" y="8" width="20" height="3" fill="#f43f5e"/><rect x="3" y="13" width="20" height="3" fill="#06b6d4"/><rect x="3" y="18" width="20" height="3" fill="#c084fc"/></svg>
+        <span class="icon-lbl">4-STEMS</span><span class="icon-sub">DRM·BAS·OTH·VOX</span>
+      </div>
+      <div class="icon-cell">
+        <svg width="26" height="22" viewBox="0 0 26 22"><path d="M6 15 V7 H18 L15 4 M20 7 V15 H8 L11 18" fill="none" stroke="#c084fc" stroke-width="2"/></svg>
+        <span class="icon-lbl">LOOP ROLL</span><span class="icon-sub">1 · 2 · 4 · 8 BEAT</span>
+      </div>
+
+      <div class="icon-cell">
+        <svg width="26" height="22" viewBox="0 0 26 22"><circle cx="7" cy="11" r="4" fill="#fb7185"/><circle cx="15" cy="11" r="3" fill="#fb7185" opacity="0.65"/><circle cx="21" cy="11" r="2" fill="#fb7185" opacity="0.35"/></svg>
+        <span class="icon-lbl">ECHO OUT</span><span class="icon-sub">3/4 BEAT TAIL</span>
+      </div>
+      <div class="icon-cell">
+        <svg width="26" height="22" viewBox="0 0 26 22"><path d="M3 16 L10 6 L16 6 L23 16" fill="none" stroke="#38bdf8" stroke-width="2"/><line x1="13" y1="3" x2="13" y2="19" stroke="#f05a24" stroke-width="1.4" stroke-dasharray="2,2"/></svg>
+        <span class="icon-lbl">LP / HP FLT</span><span class="icon-sub">BIQUAD SWEEP</span>
+      </div>
+      <div class="icon-cell">
+        <svg width="26" height="22" viewBox="0 0 26 22"><path d="M5 14 V11 A8 8 0 0 1 21 11 V14" fill="none" stroke="#22d3ee" stroke-width="2"/><rect x="4" y="13" width="4" height="6" fill="#22d3ee"/><rect x="18" y="13" width="4" height="6" fill="#22d3ee"/></svg>
+        <span class="icon-lbl">SPLIT CUE</span><span class="icon-sub">CH 3–4 PFL</span>
+      </div>
+      <div class="icon-cell">
+        <svg width="26" height="22" viewBox="0 0 26 22"><circle cx="13" cy="11" r="6" fill="none" stroke="#f05a24" stroke-width="2"/><line x1="8" y1="16" x2="18" y2="6" stroke="#f05a24" stroke-width="2"/></svg>
+        <span class="icon-lbl">NULL ∅</span><span class="icon-sub">DRUM KEY RESET</span>
+      </div>
+      <div class="icon-cell">
+        <svg width="26" height="22" viewBox="0 0 26 22"><rect x="3" y="4" width="6" height="6" fill="#fb923c"/><rect x="10" y="4" width="6" height="6" fill="#fb923c"/><rect x="17" y="4" width="6" height="6" fill="#44464f"/><rect x="3" y="12" width="6" height="6" fill="#fb923c"/><rect x="10" y="12" width="6" height="6" fill="#44464f"/><rect x="17" y="12" width="6" height="6" fill="#44464f"/></svg>
+        <span class="icon-lbl">SAMPLER</span><span class="icon-sub">8 ONE-SHOT PADS</span>
+      </div>
+      <div class="icon-cell">
+        <svg width="26" height="22" viewBox="0 0 26 22"><circle cx="13" cy="11" r="6.5" fill="#ef4444"/><circle cx="13" cy="11" r="2.2" fill="#0f0e12"/></svg>
+        <span class="icon-lbl">REC WAV</span><span class="icon-sub">STREAM TO DISK</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet-foot">
+    <span>VIBEDECK · STEM-AWARE DJ ENGINE · APPLE SILICON</span>
+    <span>SHEET 01 / 02 — CONTROLLER MAP</span>
+    <span>KEEP NEXT TO UNIT</span>
+  </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- PAGE 2: SIGNAL FLOW, KEYBOARD MAP, TRANSITION PLAYBOOK & COLOR LEGEND  -->
+<!-- ====================================================================== -->
+<section class="sheet">
+  <div class="reg tl"></div><div class="reg tr"></div><div class="reg bl"></div><div class="reg br"></div>
+
+  <div class="masthead">
+    <div>
+      <div class="brand-kicker">
+        <span class="pill-orange">SIGNAL &amp; PLAYBOOK</span>
+        <span class="pill-black">BACK SIDE</span>
+        <span>WIRING · KEYBOARD · TRANSITIONS · HARMONICS</span>
+      </div>
+      <h1>vibedeck <strong>booth</strong> operations</h1>
+    </div>
+    <div class="meta-grid">
+      <div class="meta-cell"><span class="k">DSP CORE</span><span class="v">STRETCH</span></div>
+      <div class="meta-cell"><span class="k">STEMS</span><span class="v">HTDEMUCS</span></div>
+      <div class="meta-cell"><span class="k">TARGET</span><span class="v">-14 LUFS</span></div>
+      <div class="meta-cell"><span class="k">REC</span><span class="v">16B WAV</span></div>
+    </div>
+  </div>
+
+  <!-- ((5)) Signal & Wiring Diagram -->
+  <div>
+    <div class="sec-head">
+      <span class="sec-num">((5))</span>
+      <span class="sec-title">hardware wiring &amp; internal dsp signal path</span>
+      <span class="sec-sub">ZERO BLUETOOTH · PASSIVE WIRED XM4s FOR CUEING</span>
+    </div>
+    <div class="sig-box">
+      <svg viewBox="0 0 720 118" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace">
+        <!-- Row 1: DSP Chain -->
+        <text x="4" y="11" font-size="6.8" fill="#767676" font-weight="700">INTERNAL ENGINE</text>
+        <g stroke="#0f0e12" stroke-width="1">
+          <rect x="4" y="18" width="104" height="34" fill="#f2f1ec"/>
+          <rect x="124" y="18" width="90" height="34" fill="#f2f1ec"/>
+          <rect x="230" y="18" width="114" height="34" fill="#f2f1ec"/>
+          <rect x="360" y="18" width="106" height="34" fill="#f2f1ec"/>
+          <rect x="482" y="18" width="100" height="34" fill="#0f0e12"/>
+          <rect x="598" y="18" width="118" height="34" fill="#f05a24"/>
+        </g>
+        <!-- Arrows -->
+        <g stroke="#0f0e12" stroke-width="1.2" fill="none">
+          <path d="M108 35 H122 M118 31 L122 35 L118 39"/>
+          <path d="M214 35 H228 M224 31 L228 35 L224 39"/>
+          <path d="M344 35 H358 M354 31 L358 35 L354 39"/>
+          <path d="M466 35 H480 M476 31 L480 35 L476 39"/>
+          <path d="M582 35 H596 M592 31 L596 35 L592 39"/>
+        </g>
+        <g font-size="7" font-weight="700" text-anchor="middle">
+          <text x="56" y="32" fill="#0f0e12">DECK SOURCE</text>
+          <text x="56" y="43" font-size="5.8" fill="#767676" font-weight="400">4-STEMS / STRETCH</text>
+
+          <text x="169" y="32" fill="#0f0e12">TRIM + EQ</text>
+          <text x="169" y="43" font-size="5.8" fill="#767676" font-weight="400">AUTO-GAIN · LO/M/HI</text>
+
+          <text x="287" y="32" fill="#0f0e12">FX RACK</text>
+          <text x="287" y="43" font-size="5.8" fill="#767676" font-weight="400">LP/HP · DLY · VRB · ECHO</text>
+
+          <text x="413" y="32" fill="#0f0e12">VOL + XFADER</text>
+          <text x="413" y="43" font-size="5.8" fill="#767676" font-weight="400">EQUAL-POWER CURVE</text>
+
+          <text x="532" y="32" fill="#fff">MASTER BUS</text>
+          <text x="532" y="43" font-size="5.8" fill="#fab413" font-weight="400">+ 8-PAD SAMPLER · REC</text>
+
+          <text x="657" y="32" fill="#fff">SPLIT CUE OUT</text>
+          <text x="657" y="43" font-size="5.8" fill="#ffe4d6" font-weight="400">CH 1–2 MST · CH 3–4 CUE</text>
+        </g>
+
+        <!-- Row 2: Physical Rig Wiring -->
+        <text x="4" y="71" font-size="6.8" fill="#767676" font-weight="700">PHYSICAL RIG ($0 SPLIT-CUE SETUP · REQUIRES K.O. II OS 2.5 FOR USB AUDIO)</text>
+        <g stroke="#0f0e12" stroke-width="1">
+          <rect x="4" y="78" width="142" height="32" fill="#272727"/>
+          <rect x="206" y="78" width="150" height="32" fill="#dedcd5"/>
+          <rect x="412" y="78" width="128" height="32" fill="#f2f1ec"/>
+          <rect x="576" y="78" width="140" height="32" fill="#0071bb"/>
+        </g>
+        <g stroke="#0f0e12" stroke-width="1.2" fill="none">
+          <path d="M146 94 H204 M200 90 L204 94 L200 98" stroke="#f05a24" stroke-width="1.6"/>
+          <path d="M356 94 H410 M406 90 L410 94 L406 98"/>
+        </g>
+        <!-- Cue path under MacBook to Headphones -->
+        <path d="M75 110 V116 H646 V110" stroke="#0071bb" stroke-width="1.2" stroke-dasharray="3,2" fill="none"/>
+        <text x="175" y="88" text-anchor="middle" font-size="6" fill="#f05a24" font-weight="700">USB-C</text>
+        <text x="383" y="88" text-anchor="middle" font-size="6" fill="#0f0e12" font-weight="700">AUX 3.5</text>
+        <g font-size="7" font-weight="700" text-anchor="middle">
+          <text x="75" y="92" fill="#fff">MACBOOK PRO</text>
+          <text x="75" y="103" font-size="5.8" fill="#b2b2b2" font-weight="400">AGGREGATE: EP-133 FIRST</text>
+
+          <text x="281" y="92" fill="#0f0e12">EP–133 K.O. II</text>
+          <text x="281" y="103" font-size="5.8" fill="#4d4d4d" font-weight="400">CODE 511 · MIDI + CH 1–2</text>
+
+          <text x="476" y="92" fill="#0f0e12">SPEAKER</text>
+          <text x="476" y="103" font-size="5.8" fill="#767676" font-weight="400">ROOM MASTER OUT</text>
+
+          <text x="646" y="92" fill="#fff">SONY XM4 (WIRED)</text>
+          <text x="646" y="103" font-size="5.8" fill="#bae6fd" font-weight="400">3.5MM JACK · PWR OFF · CUE</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ((6)) Keyboard Reference -->
+  <div>
+    <div class="sec-head">
+      <span class="sec-num">((6))</span>
+      <span class="sec-title">keyboard command matrix</span>
+      <span class="sec-sub">SAFE WHILE TYPING IN SEARCH BOXES · CLICK DECK TO FOCUS</span>
+    </div>
+    <div class="keys-grid">
+      <div class="key-panel ka">
+        <div class="key-panel-hd"><span>DECK A</span><span>LEFT HAND</span></div>
+        <table class="key-tbl">
+          <tr><td>Q / W / E</td><td>Play · Cue (hold) · Set Cue</td></tr>
+          <tr><td>R / 3</td><td>Sync (toggle lock) · Key Lock</td></tr>
+          <tr><td>1 / 2</td><td>Pitch bend − / +</td></tr>
+          <tr><td>A S D F</td><td>Hot Cues 1–4 (+Shift sets)</td></tr>
+          <tr><td>4 5 6 7</td><td>Loop Rolls 1 / 2 / 4 / 8 beat</td></tr>
+          <tr><td>T / G / Z</td><td>Loop Latch · Echo Out · PFL Cue</td></tr>
+        </table>
+      </div>
+      <div class="key-panel kb">
+        <div class="key-panel-hd"><span>DECK B</span><span>RIGHT HAND</span></div>
+        <table class="key-tbl">
+          <tr><td>P / O / I</td><td>Play · Cue (hold) · Set Cue</td></tr>
+          <tr><td>U / 8</td><td>Sync (toggle lock) · Key Lock</td></tr>
+          <tr><td>9 / 0</td><td>Pitch bend − / +</td></tr>
+          <tr><td>J K L ;</td><td>Hot Cues 1–4 (+Shift sets)</td></tr>
+          <tr><td>B N M '</td><td>Loop Rolls 1 / 2 / 4 / 8 beat</td></tr>
+          <tr><td>Y / H / /</td><td>Loop Latch · Echo Out · PFL Cue</td></tr>
+        </table>
+      </div>
+      <div class="key-panel">
+        <div class="key-panel-hd"><span>MIXER &amp; GRID</span><span>GLOBAL</span></div>
+        <table class="key-tbl">
+          <tr><td>, / . / SPC</td><td>Crossfader L · R · Center</td></tr>
+          <tr><td>[ / ] / \</td><td>Beat Jump ◀ / ▶ / Size</td></tr>
+          <tr><td>Shift + 1–8</td><td>Trigger Sampler Pads 1–8</td></tr>
+          <tr><td>X / C</td><td>Split Cue · Auto-Gain (-14)</td></tr>
+          <tr><td>V</td><td>Record mix → ~/Music/vibedeck</td></tr>
+          <tr><td>Wheel / 2×Clk</td><td>Zoom wave · Reset FLT/EQ/BPM</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ((7)) Four Signature Transition Recipes -->
+  <div>
+    <div class="sec-head">
+      <span class="sec-num">((7))</span>
+      <span class="sec-title">four signature transition playbooks</span>
+      <span class="sec-sub">LIVE PERFORMANCE MOVES · WORKS WITH K.O. II + STEMS</span>
+    </div>
+    <div class="recipes-grid">
+      <div class="recipe">
+        <div class="recipe-hd"><span class="recipe-title">01 · looped echo-out transition</span><span class="recipe-tag">CLASSIC BLEND</span></div>
+        <div class="recipe-steps">
+          <b>1.</b> Sync Deck B (<span class="cap blu">U</span>), pre-listen via <span class="cap">/</span>, click Co-Pilot <span class="cap">PREP B</span>.<br/>
+          <b>2.</b> Slide crossfader to center while sweeping Deck A <b>FLT</b> up (high-pass).<br/>
+          <b>3.</b> Hold Deck A <span class="cap org">4</span> (1B roll) + <span class="cap org">G</span> (Echo Out) for 4 beats → pull A <b>VOL</b> down → release into the echo tail as B's drop hits.
+        </div>
+      </div>
+
+      <div class="recipe">
+        <div class="recipe-hd"><span class="recipe-title">02 · 8-bar bass pull + 3/4 delay</span><span class="recipe-tag">FRED / FOUR TET</span></div>
+        <div class="recipe-steps">
+          <b>1.</b> On a stemmed track in a <b>DROP</b>, click rose <span class="cap red">BAS</span> pill to drop sub-bass while highs, vocals, and drums float.<br/>
+          <b>2.</b> Set <b>DLY</b> fraction to <b>3/4</b> (dotted), <b>FB</b> ~0.65; punch <b>DLY</b> on one vocal phrase.<br/>
+          <b>3.</b> Watch HUD countdown (8 bars) → slam <span class="cap red">BAS</span> back in on Beat 1.
+        </div>
+      </div>
+
+      <div class="recipe">
+        <div class="recipe-hd"><span class="recipe-title">03 · drums-only ∅ harmonic reset</span><span class="recipe-tag">KEY CLASH ESCAPE</span></div>
+        <div class="recipe-steps">
+          <b>1.</b> Need to jump across incompatible Camelot keys (e.g. <b>12B → 8A</b>)?<br/>
+          <b>2.</b> Shift-click amber <span class="cap org">DRM</span> pill on Deck A (solos drums only = null node <b>∅</b>) &amp; engage a <b>4B</b> latched loop.<br/>
+          <b>3.</b> Harmonic context resets cleanly — fade in Deck B's intro, then cut A's drums on B's first kick.
+        </div>
+      </div>
+
+      <div class="recipe">
+        <div class="recipe-hd"><span class="recipe-title">04 · co-pilot phrase-locked swap</span><span class="recipe-tag">FAST CURATION</span></div>
+        <div class="recipe-steps">
+          <b>1.</b> Pick mode <span class="cap blu">FLOW</span> / <span class="cap org">LIFT</span> / <span class="cap">CHILL</span> in <b>CO-PILOT</b> and click any Top-5 pick.<br/>
+          <b>2.</b> Track auto-loads &amp; cues on the idle deck; check the 5-point card for <b>KICK</b> owner &amp; <b>[!] VOX CLASH</b>.<br/>
+          <b>3.</b> Launch on HUD countdown (<span class="cap org">BUILD → DROP IN 8.0</span>) so drops align bar-for-bar.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ((8)) Color System + Camelot Reference -->
+  <div>
+    <div class="sec-head">
+      <span class="sec-num">((8))</span>
+      <span class="sec-title">visual color system &amp; camelot wheel rules</span>
+      <span class="sec-sub">CONSISTENT ACROSS OVERVIEW, 4-STEM LANES, PADS &amp; CRATE</span>
+    </div>
+    <div class="ref-strip">
+      <div class="ref-box">
+        <div class="ref-hd">4-stem lanes &amp; faders</div>
+        <div class="swatch-list">
+          <div class="swatch-row"><span class="sw" style="background:#f59e0b"></span><span class="sw-lbl">DRM</span><span class="sw-desc">Drums / kicks / hats · natural ∅</span></div>
+          <div class="swatch-row"><span class="sw" style="background:#f43f5e"></span><span class="sw-lbl">BAS</span><span class="sw-desc">Sub-bass &amp; 808 · swap on drops</span></div>
+          <div class="swatch-row"><span class="sw" style="background:#06b6d4"></span><span class="sw-lbl">OTH</span><span class="sw-desc">Synths, guitars, chords, pads</span></div>
+          <div class="swatch-row"><span class="sw" style="background:#c084fc"></span><span class="sw-lbl">VOX</span><span class="sw-desc">Vocals · drives ♪ clash alerts</span></div>
+          <div class="swatch-row"><span class="sw" style="background:#fbbf24"></span><span class="sw-lbl">CUE/B1</span><span class="sw-desc">Gold main cue &amp; Bar 1 anchor</span></div>
+        </div>
+      </div>
+
+      <div class="ref-box">
+        <div class="ref-hd">arrangement ribbon sections</div>
+        <div class="swatch-list">
+          <div class="swatch-row"><span class="sw" style="background:#38bdf8"></span><span class="sw-lbl">INTRO</span><span class="sw-desc">Opening bars · mix-in runway</span></div>
+          <div class="swatch-row"><span class="sw" style="background:#fb923c"></span><span class="sw-lbl">BUILD</span><span class="sw-desc">Rising tension pre-drop</span></div>
+          <div class="swatch-row"><span class="sw" style="background:#f43f5e"></span><span class="sw-lbl">DROP</span><span class="sw-desc">Peak loudness + full sub-bass</span></div>
+          <div class="swatch-row"><span class="sw" style="background:#f59e0b"></span><span class="sw-lbl">BREAK</span><span class="sw-desc">Bass cut / filter breakdown</span></div>
+          <div class="swatch-row"><span class="sw" style="background:#14b8a6"></span><span class="sw-lbl">GROOVE</span><span class="sw-desc">Steady mid-energy mix pocket</span></div>
+          <div class="swatch-row"><span class="sw" style="background:#818cf8"></span><span class="sw-lbl">OUTRO</span><span class="sw-desc">Trailing wind-down · mix out</span></div>
+        </div>
+      </div>
+
+      <div class="ref-box" style="display:flex;flex-direction:column;justify-content:space-between;">
+        <div class="ref-hd">camelot legal moves</div>
+        <svg viewBox="0 0 180 96" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg" font-family="JetBrainsMono Nerd Font Mono, Menlo, monospace">
+          <circle cx="48" cy="48" r="38" fill="none" stroke="#0f0e12" stroke-width="1"/>
+          <circle cx="48" cy="48" r="24" fill="none" stroke="#b2b2b2" stroke-width="1"/>
+          <circle cx="48" cy="48" r="10" fill="#0f0e12"/>
+          <text x="48" y="51" text-anchor="middle" font-size="7" fill="#f05a24" font-weight="700">∅</text>
+          <!-- Highlight 8A, 9A, 7A, 8B -->
+          <circle cx="48" cy="14" r="7" fill="#f05a24"/><text x="48" y="16.5" text-anchor="middle" font-size="6" fill="#fff" font-weight="700">8A</text>
+          <circle cx="71" cy="24" r="6" fill="#006837"/><text x="71" y="26.5" text-anchor="middle" font-size="5.5" fill="#fff" font-weight="700">9A</text>
+          <circle cx="25" cy="24" r="6" fill="#0071bb"/><text x="25" y="26.5" text-anchor="middle" font-size="5.5" fill="#fff" font-weight="700">7A</text>
+          <circle cx="48" cy="28" r="5.5" fill="#fab413"/><text x="48" y="30" text-anchor="middle" font-size="5.2" fill="#0f0e12" font-weight="700">8B</text>
+          <g font-size="6.4" fill="#272727">
+            <text x="96" y="18" font-weight="700" fill="#f05a24">SAME · 100%</text>
+            <text x="96" y="33" font-weight="700" fill="#006837">+1 LIFT · 94%</text>
+            <text x="96" y="48" font-weight="700" fill="#0071bb">−1 COOL · 90%</text>
+            <text x="96" y="63" font-weight="700" fill="#b45309">REL A↔B · 88%</text>
+            <text x="96" y="78" font-weight="700" fill="#7c3aed">+2 BOOST · 74%</text>
+            <text x="96" y="92" font-weight="700" fill="#0f0e12">∅ DRUMS · ANY</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet-foot">
+    <span>PRINT DOUBLE-SIDED · US LETTER · 100% SCALE · NO MARGINS</span>
+    <span>SHEET 02 / 02 — BOOTH OPERATIONS</span>
+    <span>GITHUB.COM/VIDYUT-19/VIBEDECK</span>
+  </div>
+</section>
+
+</body>
+</html>
