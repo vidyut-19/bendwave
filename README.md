@@ -1,5 +1,8 @@
 # vibedeck
 
+**→ Zero-to-mixing guide: [QUICKSTART.md](QUICKSTART.md)** — run the app, wire the
+K.O. II + headphones rig, first mix in 60 seconds.
+
 A vibe-coded, stem-aware DJ tool. Two Web Audio decks, automatic beatgrids, tempo + phase
 auto-sync, keyboard control, and MIDI-learn for anything with pads and faders — built with a
 Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI controller.
