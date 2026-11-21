@@ -4,8 +4,12 @@ import { FXUnit } from './fx'
 export interface BeatGrid {
   /** beats per minute */
   bpm: number
-  /** seconds from track start to the first beat */
+  /** seconds from track start to Bar 1, Beat 1 (downbeat anchor) */
   offset: number
+  /** beats per measure (default 4 → 4/4) */
+  beatsPerBar?: number
+  /** phrase block length in bars for the overview ruler (default 8) */
+  phraseBars?: number
 }
 
 export interface Stems {
@@ -41,7 +45,7 @@ export interface Track {
   lufs?: number
   gainDb?: number
   analyzedAt?: string
-  analysisSource?: 'browser' | 'sidecar'
+  analysisSource?: 'browser' | 'sidecar' | 'manual'
 }
 
 export const STEM_ORDER = ['drums', 'bass', 'other', 'vocals'] as const
@@ -162,6 +166,23 @@ export class Deck {
 
   get stemCount(): number {
     return this.stemLayers.length
+  }
+
+  getStemGain(i: number): number {
+    return this.stemLayers[i]?.gain.gain.value ?? 1
+  }
+
+  /** current musical position relative to Bar 1, Beat 1 (grid.offset) */
+  get barBeat(): { bar: number; beat: number; beatsPerBar: number; totalBars: number } | null {
+    const grid = this.track?.grid
+    if (!grid || grid.bpm <= 0 || !this.hasAudio) return null
+    const bpb = grid.beatsPerBar ?? 4
+    const beatDur = 60 / grid.bpm
+    const beatIdx = Math.floor((this.audiblePosition - grid.offset) / beatDur + 1e-4)
+    const bar = beatIdx >= 0 ? Math.floor(beatIdx / bpb) + 1 : Math.floor(beatIdx / bpb)
+    const beat = (((beatIdx % bpb) + bpb) % bpb) + 1
+    const totalBars = Math.max(1, Math.ceil((this.duration - grid.offset) / (beatDur * bpb)))
+    return { bar, beat, beatsPerBar: bpb, totalBars }
   }
 
   setEQ(lowDb: number, midDb: number, highDb: number): void {
@@ -412,6 +433,77 @@ export class Deck {
     this.seek(target)
   }
 
+  // -------------------------------------------------------------------------
+  // beatgrid & measure editing
+  // -------------------------------------------------------------------------
+
+  private ensureGrid(): BeatGrid | null {
+    if (!this.track) return null
+    if (!this.track.grid || this.track.grid.bpm <= 0) {
+      this.track.grid = { bpm: 120, offset: 0, beatsPerBar: 4, phraseBars: 8 }
+    }
+    return this.track.grid
+  }
+
+  /** anchor Bar 1, Beat 1 at the current playhead position */
+  setDownbeatHere(): boolean {
+    const g = this.ensureGrid()
+    if (!g || !this.hasAudio) return false
+    g.offset = Math.round(this.audiblePosition * 10000) / 10000
+    if (this.track) this.track.analysisSource = 'manual'
+    return true
+  }
+
+  /** shift Bar 1 left/right by N beats (keeps beats on kicks, moves measure line) */
+  shiftDownbeat(beats: number): boolean {
+    const g = this.ensureGrid()
+    if (!g || g.bpm <= 0) return false
+    const beatDur = 60 / g.bpm
+    g.offset = Math.round((g.offset + beats * beatDur) * 10000) / 10000
+    if (this.track) this.track.analysisSource = 'manual'
+    return true
+  }
+
+  /** fine-nudge grid offset by deltaSec (e.g. ±0.010s) */
+  nudgeGrid(deltaSec: number): boolean {
+    const g = this.ensureGrid()
+    if (!g) return false
+    g.offset = Math.round((g.offset + deltaSec) * 10000) / 10000
+    if (this.track) this.track.analysisSource = 'manual'
+    return true
+  }
+
+  /** half or double the track BPM (e.g. 0.5 or 2) */
+  scaleBpm(factor: number): number | null {
+    const g = this.ensureGrid()
+    if (!g || g.bpm <= 0) return null
+    const next = Math.round(g.bpm * factor * 100) / 100
+    if (next < 40 || next > 260) return null
+    g.bpm = next
+    if (this.track) this.track.analysisSource = 'manual'
+    return next
+  }
+
+  /** cycle beats per measure: 4/4 → 3/4 → 2/4 → 6/4 → 8/4 */
+  cycleBeatsPerBar(): number {
+    const g = this.ensureGrid()
+    if (!g) return 4
+    const opts = [4, 3, 2, 6, 8]
+    const cur = g.beatsPerBar ?? 4
+    g.beatsPerBar = opts[(opts.indexOf(cur) + 1) % opts.length]
+    return g.beatsPerBar
+  }
+
+  /** cycle overview phrase block length: 4 → 8 → 16 bars */
+  cyclePhraseBars(): number {
+    const g = this.ensureGrid()
+    if (!g) return 8
+    const opts = [4, 8, 16]
+    const cur = g.phraseBars ?? 8
+    g.phraseBars = opts[(opts.indexOf(cur) + 1) % opts.length]
+    return g.phraseBars
+  }
+
   private clearLoop(restart: boolean): void {
     this.activeLoop = null
     this.cancelLoopScheduling()
@@ -503,18 +595,18 @@ export class Deck {
   syncTo(master: Deck): boolean {
     const mg = master.track?.grid
     const sg = this.track?.grid
-    if (!mg || !sg || !this.hasAudio || !master.hasAudio) return false
+    if (!mg || !sg || mg.bpm <= 0 || sg.bpm <= 0 || !this.hasAudio || !master.hasAudio) return false
 
     const masterEffBpm = mg.bpm * master.effRate
     this.setTempoRate(masterEffBpm / sg.bpm)
 
-    const mBeat = 60 / masterEffBpm
-    const sBeat = 60 / (sg.bpm * this.effRate)
-    const mPhase = ((((master.position + mg.offset) / mBeat) % 1) + 1) % 1
-    const target = sBeat * mPhase - sg.offset
-    const k = Math.round((this.position - target) / sBeat)
-    let pos = target + k * sBeat
-    if (pos < 0) pos += sBeat
+    // Both position and offset are in track time; track-time beat length is 60/bpm.
+    const mBeat = 60 / mg.bpm
+    const sBeat = 60 / sg.bpm
+    const mPhase = ((((master.position - mg.offset) / mBeat) % 1) + 1) % 1
+    const k = Math.round((this.position - sg.offset) / sBeat - mPhase)
+    let pos = sg.offset + (k + mPhase) * sBeat
+    while (pos < 0) pos += sBeat
     this.seek(pos)
     return true
   }

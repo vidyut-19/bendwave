@@ -11,9 +11,11 @@ let win: BrowserWindow | null = null
 
 function createWindow(): void {
   win = new BrowserWindow({
-    width: 1360,
-    height: 860,
-    backgroundColor: '#0b0d10',
+    width: 1440,
+    height: 920,
+    minWidth: 1180,
+    minHeight: 740,
+    backgroundColor: '#090b0f',
     title: 'vibedeck',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

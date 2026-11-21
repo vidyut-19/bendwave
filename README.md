@@ -7,14 +7,30 @@ A vibe-coded, stem-aware DJ tool. Two Web Audio decks, automatic beatgrids, temp
 auto-sync, keyboard control, and MIDI-learn for anything with pads and faders — built with a
 Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI controller.
 
-## What works today (v0.2)
+## What works today (v1.1)
 
+- **Timing & Harmony HUD**: top-of-deck readout shows live BPM, original track BPM (`ORIG`),
+  clickable pitch delta, harmonic-wheel color-coded Camelot key + full musical key name,
+  and **KEY LOCK** + **SYNC** + **🎧 CUE** right alongside them, plus live `BAR.BEAT`,
+  elapsed, and remaining time.
+- **Dual waveforms (overview + close-up)**:
+  - **Zoom-out Full-Track Overview**: entire song unsegmented with alternating phrase blocks,
+    bar-number ruler (`B1`, `9`, `17`…), hover bar/time inspector to count intro lengths,
+    close-up viewport bracket, cue flags, and click/drag jump.
+  - **Close-up Scrolling Waveform**: switches between **4-STEMS** (separated Drums / Bass /
+    Other / Vocals lanes, color-matched to the stem faders and dimming live when muted),
+    **3-BAND** (separated Low / Mid / High frequency lanes on any track), and **RGB**
+    (Serato-style frequency-colored unified view).
+- **Measure & beatgrid controls**: `SET 1` anchors Bar 1 Beat 1 at the playhead, `◀1`/`1▶`
+  shifts the downbeat by a beat, `-ms`/`+ms` nudges ±10ms, `½×`/`2×` halves/doubles BPM,
+  plus configurable measure length (`4/4`, `3/4`, `2/4`, `6/4`, `8/4`) and overview phrase
+  block size (`4B`/`8B`/`16B`). Edits persist in the crate.
 - **Two decks + mixer**: play/pause, CDJ-style cue (hold to preview, release to return),
-  set-cue, pitch fader (±8%), pitch bend, 3-band EQ per deck, equal-power crossfader, master.
-- **Waveform + beatgrid**: scrolling zoomable waveform per deck with beat lines, downbeats,
-  cue and hot-cue markers. Click/drag to seek, wheel to zoom.
-- **Hot cues**: 4 per deck, per-track persistent, colored, shown on the waveform —
-  keyboard (`A S D F` / `J K L ;`, shift to set, alt-click to clear) or MIDI-learned pads.
+  set-cue, pitch fader (±8%, double-click resets), pitch bend, 3-band EQ per deck,
+  equal-power crossfader, master.
+- **Color-coded cues & stems**: richly color-coded hot cues 1–4 (with bar/time labels on set
+  pads and flag pills on both waveforms), gold main CUE, purple loops, teal beat jumps, and
+  per-stem click-to-mute / shift-click-to-solo badges.
 - **Sync with drift lock**: SYNC matches tempo + phase, then a soft PLL keeps the slave
   locked to the master while both play. SYNC again (or any manual pitch/scrub) releases.
 - **Key lock (experimental)**: WSOLA time-stretcher in an AudioWorklet — change tempo,

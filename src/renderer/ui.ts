@@ -1,18 +1,34 @@
 export interface DeckRefs {
   root: HTMLElement
   name: HTMLElement
-  bpm: HTMLElement
-  key: HTMLElement
+  barBeat: HTMLElement
   pos: HTMLElement
+  rem: HTMLElement
+  bpm: HTMLElement
+  origBpm: HTMLElement
+  pitchBadge: HTMLButtonElement
+  keyCamelot: HTMLElement
+  keyName: HTMLElement
+  keylockBtn: HTMLButtonElement
+  syncBtn: HTMLButtonElement
+  overview: HTMLCanvasElement
+  waveform: HTMLCanvasElement
+  bpbBtn: HTMLButtonElement
+  phraseBtn: HTMLButtonElement
+  wfRgbBtn: HTMLButtonElement
+  wfBandsBtn: HTMLButtonElement
+  wfStemsBtn: HTMLButtonElement
+  zoomOutBtn: HTMLButtonElement
+  zoomInBtn: HTMLButtonElement
+  zoomVal: HTMLElement
   rate: HTMLInputElement
   rateVal: HTMLElement
+  rateResetBtn: HTMLButtonElement
   playBtn: HTMLButtonElement
   cueBtn: HTMLButtonElement
-  syncBtn: HTMLButtonElement
-  keylockBtn: HTMLButtonElement
-  waveform: HTMLCanvasElement
   hotcueBtns: HTMLButtonElement[]
   stemsBox: HTMLElement
+  stemMuteBtns: HTMLButtonElement[]
   stemSliders: HTMLInputElement[]
   eqLow: HTMLInputElement
   eqMid: HTMLInputElement
@@ -21,12 +37,12 @@ export interface DeckRefs {
   wet: HTMLInputElement
   fb: HTMLInputElement
   vol: HTMLInputElement
+  trim: HTMLInputElement
   delayBtn: HTMLButtonElement
   fracBtn: HTMLButtonElement
   reverbBtn: HTMLButtonElement
   echoBtn: HTMLButtonElement
   cueMixBtn: HTMLButtonElement
-  trim: HTMLInputElement
   loopBtns: HTMLButtonElement[]
   loopLatchBtn: HTMLButtonElement
   loopExitBtn: HTMLButtonElement
@@ -66,72 +82,156 @@ export interface AppRefs {
 }
 
 const DECK_TEMPLATE = (id: 'A' | 'B') => `
-  <div class="deck-head"><span class="deck-label">${id}</span><span class="track-name">— empty —</span></div>
-  <div class="deck-stats">
-    <span class="stat bpm" title="effective BPM">–.–</span>
-    <span class="stat key"></span>
-    <span class="stat pos">0:00.0</span>
+  <div class="deck-head">
+    <span class="deck-badge">${id}</span>
+    <span class="track-name">— empty deck —</span>
+    <span class="bar-beat" title="Current Bar.Beat from Measure 1">—</span>
+    <span class="time-group">
+      <span class="pos">0:00.0</span>
+      <span class="rem">-0:00.0</span>
+    </span>
   </div>
-  <div class="waveform-box"><canvas class="waveform"></canvas></div>
+
+  <div class="deck-hud">
+    <div class="hud-card bpm-card">
+      <div class="hud-main">
+        <span class="bpm" title="Live playback BPM">–.–</span>
+        <span class="hud-unit">BPM</span>
+      </div>
+      <div class="hud-sub">
+        <span class="orig-bpm" title="Original track tempo">ORIG –.–</span>
+        <button class="pitch-badge" title="Click to reset pitch to 0.00%">+0.00%</button>
+      </div>
+    </div>
+
+    <div class="hud-card key-card">
+      <div class="hud-key-row">
+        <span class="key-camelot" title="Camelot harmonic key">—</span>
+        <div class="key-meta">
+          <span class="hud-cap">KEY</span>
+          <span class="key-name">unanalyzed</span>
+        </div>
+      </div>
+      <button class="hud-btn keylock" data-act="deck${id}.keylock" title="Lock musical key while changing tempo (Signalsmith Stretch)">🔒 KEY LOCK</button>
+    </div>
+
+    <div class="hud-actions">
+      <button class="hud-btn sync" data-act="deck${id}.sync" title="Match BPM & phase + drift lock">SYNC</button>
+      <button class="hud-btn cuemix" data-act="deck${id}.cueMix" title="Headphone pre-listen (split-cue mode)">🎧 CUE</button>
+    </div>
+  </div>
+
+  <div class="visuals">
+    <div class="overview-box" title="Full-track overview — hover to measure intro bars, click/drag to jump">
+      <canvas class="overview"></canvas>
+    </div>
+
+    <div class="grid-bar">
+      <div class="grid-group">
+        <span class="bar-label">MEASURE</span>
+        <button class="mini-btn accent-gold" data-act="deck${id}.setBar1" title="Anchor Bar 1, Beat 1 at current playhead">SET 1</button>
+        <button class="mini-btn" data-act="deck${id}.beatLeft" title="Shift measure downbeat 1 beat earlier">◀1</button>
+        <button class="mini-btn" data-act="deck${id}.beatRight" title="Shift measure downbeat 1 beat later">1▶</button>
+        <button class="mini-btn" data-act="deck${id}.nudgeBack" title="Nudge beatgrid -10ms">-ms</button>
+        <button class="mini-btn" data-act="deck${id}.nudgeFwd" title="Nudge beatgrid +10ms">+ms</button>
+        <button class="mini-btn" data-act="deck${id}.bpmHalf" title="Halve BPM">½×</button>
+        <button class="mini-btn" data-act="deck${id}.bpmDouble" title="Double BPM">2×</button>
+        <button class="mini-btn bpb-btn" data-act="deck${id}.beatsPerBar" title="Beats per measure (click to cycle)">4/4</button>
+        <button class="mini-btn phrase-btn" data-act="deck${id}.phraseBars" title="Phrase block size on overview (click to cycle)">8B</button>
+      </div>
+      <div class="grid-group wf-controls">
+        <div class="seg-group" role="group" aria-label="Waveform mode">
+          <button class="seg-btn wf-rgb active" title="Unified 3-band RGB frequency waveform">RGB</button>
+          <button class="seg-btn wf-bands" title="Separated Low / Mid / High frequency lanes">3-BAND</button>
+          <button class="seg-btn wf-stems" disabled title="Separated Drums / Bass / Other / Vocals stem lanes">4-STEMS</button>
+        </div>
+        <button class="mini-btn zoom-out" title="Zoom out">−</button>
+        <span class="zoom-val">10s</span>
+        <button class="mini-btn zoom-in" title="Zoom in">+</button>
+      </div>
+    </div>
+
+    <div class="waveform-box" title="Close-up scrolling waveform — drag to scrub, wheel to zoom">
+      <canvas class="waveform"></canvas>
+    </div>
+  </div>
+
   <div class="row rate-row">
-    <input class="rate" type="range" min="-8" max="8" step="0.05" value="0" />
+    <span class="sec-lab">PITCH</span>
+    <input class="rate" type="range" min="-8" max="8" step="0.05" value="0" title="Double-click to reset" />
     <span class="rate-val">+0.00%</span>
+    <button class="mini-btn rate-rst" title="Reset pitch to original tempo">0%</button>
   </div>
-  <div class="row eq-row">
-    <label>EQ
-      low <input class="eq eq-low" type="range" min="-26" max="6" step="0.5" value="0" />
-      mid <input class="eq eq-mid" type="range" min="-26" max="6" step="0.5" value="0" />
-      high <input class="eq eq-high" type="range" min="-26" max="6" step="0.5" value="0" />
-    </label>
-  </div>
-  <div class="row fx-row">
-    <label class="fx-lab">FLT <input class="filter" type="range" min="-1" max="1" step="0.01" value="0" title="double-click to reset" /></label>
-    <button class="t-btn fx delay" data-act="deck${id}.delay">DLY</button>
-    <button class="t-btn fx frac" data-act="deck${id}.delayFrac">1/2</button>
-    <button class="t-btn fx reverb" data-act="deck${id}.reverb">VRB</button>
-    <button class="t-btn fx echo" data-act="deck${id}.echoOut">ECHO</button>
-  </div>
-  <div class="row fx-params">
-    <label class="fx-lab">TRM <input class="trim" type="range" min="-12" max="12" step="0.5" value="0" title="input trim (dB)" /></label>
-    <label class="fx-lab">WET <input class="wet" type="range" min="0" max="1" step="0.01" value="0.55" /></label>
-    <label class="fx-lab">FB <input class="fb" type="range" min="0" max="0.9" step="0.01" value="0.5" /></label>
-    <label class="fx-lab">VOL <input class="vol" type="range" min="0" max="1" step="0.01" value="1" /></label>
-    <button class="t-btn fx cuemix" data-act="deck${id}.cueMix" title="headphone cue (split-cue mode)">CUE</button>
-  </div>
+
   <div class="stems-row" hidden>
-    <div class="stem"><span>DRUMS</span><input type="range" min="0" max="1" step="0.01" value="1" /></div>
-    <div class="stem"><span>BASS</span><input type="range" min="0" max="1" step="0.01" value="1" /></div>
-    <div class="stem"><span>OTHER</span><input type="range" min="0" max="1" step="0.01" value="1" /></div>
-    <div class="stem"><span>VOCALS</span><input type="range" min="0" max="1" step="0.01" value="1" /></div>
+    <div class="stem stem-drums">
+      <button class="stem-pill" data-stem="0" title="Click mute · Shift+click solo">DRM</button>
+      <input type="range" min="0" max="1" step="0.01" value="1" />
+    </div>
+    <div class="stem stem-bass">
+      <button class="stem-pill" data-stem="1" title="Click mute · Shift+click solo">BAS</button>
+      <input type="range" min="0" max="1" step="0.01" value="1" />
+    </div>
+    <div class="stem stem-other">
+      <button class="stem-pill" data-stem="2" title="Click mute · Shift+click solo">OTH</button>
+      <input type="range" min="0" max="1" step="0.01" value="1" />
+    </div>
+    <div class="stem stem-vocals">
+      <button class="stem-pill" data-stem="3" title="Click mute · Shift+click solo">VOX</button>
+      <input type="range" min="0" max="1" step="0.01" value="1" />
+    </div>
   </div>
-  <div class="transport">
-    <button class="t-btn play" data-act="deck${id}.play">PLAY</button>
-    <button class="t-btn cue" data-act="deck${id}.cue">CUE</button>
-    <button class="t-btn" data-act="deck${id}.setCue">SET&nbsp;CUE</button>
-    <button class="t-btn sync" data-act="deck${id}.sync">SYNC</button>
-    <button class="t-btn keylock" data-act="deck${id}.keylock">KEY</button>
+
+  <div class="perf-section">
+    <div class="transport">
+      <button class="t-btn play" data-act="deck${id}.play">▶ PLAY</button>
+      <button class="t-btn cue" data-act="deck${id}.cue">CUE</button>
+      <button class="t-btn set-cue" data-act="deck${id}.setCue">SET CUE</button>
+    </div>
+
+    <div class="row hotcue-row">
+      <span class="sec-lab">CUES</span>
+      <button class="hc hc1" data-act="deck${id}.hotcue1"><span class="hc-num">1</span><span class="hc-time">—</span></button>
+      <button class="hc hc2" data-act="deck${id}.hotcue2"><span class="hc-num">2</span><span class="hc-time">—</span></button>
+      <button class="hc hc3" data-act="deck${id}.hotcue3"><span class="hc-num">3</span><span class="hc-time">—</span></button>
+      <button class="hc hc4" data-act="deck${id}.hotcue4"><span class="hc-num">4</span><span class="hc-time">—</span></button>
+      <span class="hc-hint">⇧set · ⌥clr</span>
+    </div>
+
+    <div class="row loop-jump-row">
+      <span class="sec-lab">LOOP</span>
+      <button class="t-btn loop loop1" data-act="deck${id}.loop1" title="1-beat loop roll (hold)">1</button>
+      <button class="t-btn loop loop2" data-act="deck${id}.loop2" title="2-beat loop roll (hold)">2</button>
+      <button class="t-btn loop loop4" data-act="deck${id}.loop4" title="4-beat loop roll (hold)">4</button>
+      <button class="t-btn loop loop8" data-act="deck${id}.loop8" title="8-beat loop roll (hold)">8</button>
+      <button class="t-btn loop-latch" data-act="deck${id}.loopLatch" title="Latching loops instead of momentary rolls">LATCH</button>
+      <button class="t-btn loop-exit" data-act="deck${id}.loopExit">EXIT</button>
+      <span class="row-sep"></span>
+      <span class="sec-lab">JUMP</span>
+      <button class="t-btn jump jb" data-act="deck${id}.jumpBack" title="Beat jump back">◀◀</button>
+      <button class="t-btn jump-size" data-act="deck${id}.jumpSize" title="Jump size in beats">4</button>
+      <button class="t-btn jump jf" data-act="deck${id}.jumpFwd" title="Beat jump forward">▶▶</button>
+    </div>
   </div>
-  <div class="row hotcue-row">
-    <button class="hc hc1" data-act="deck${id}.hotcue1">1</button>
-    <button class="hc hc2" data-act="deck${id}.hotcue2">2</button>
-    <button class="hc hc3" data-act="deck${id}.hotcue3">3</button>
-    <button class="hc hc4" data-act="deck${id}.hotcue4">4</button>
-    <span class="hc-hint">shift+click sets · alt+click clears</span>
-  </div>
-  <div class="row loop-row">
-    <span class="loop-lab">LOOP</span>
-    <button class="t-btn loop loop1" data-act="deck${id}.loop1" title="1-beat loop roll (hold)">1</button>
-    <button class="t-btn loop loop2" data-act="deck${id}.loop2" title="2-beat loop roll (hold)">2</button>
-    <button class="t-btn loop loop4" data-act="deck${id}.loop4" title="4-beat loop roll (hold)">4</button>
-    <button class="t-btn loop loop8" data-act="deck${id}.loop8" title="8-beat loop roll (hold)">8</button>
-    <button class="t-btn loop-latch" data-act="deck${id}.loopLatch" title="latching loops instead of momentary rolls">LATCH</button>
-    <button class="t-btn loop-exit" data-act="deck${id}.loopExit">EXIT</button>
-  </div>
-  <div class="row jump-row">
-    <span class="loop-lab">JUMP</span>
-    <button class="t-btn jump jb" data-act="deck${id}.jumpBack" title="beat jump back (grid-quantized)">◀◀</button>
-    <button class="t-btn jump jf" data-act="deck${id}.jumpFwd" title="beat jump forward">▶▶</button>
-    <button class="t-btn jump-size" data-act="deck${id}.jumpSize" title="jump size in beats">4</button>
+
+  <div class="mix-section">
+    <div class="row eq-row">
+      <label class="ctrl-lab">TRM <input class="trim" type="range" min="-12" max="12" step="0.5" value="0" title="Input trim (dB)" /></label>
+      <label class="ctrl-lab">LO <input class="eq eq-low" type="range" min="-26" max="6" step="0.5" value="0" /></label>
+      <label class="ctrl-lab">MID <input class="eq eq-mid" type="range" min="-26" max="6" step="0.5" value="0" /></label>
+      <label class="ctrl-lab">HI <input class="eq eq-high" type="range" min="-26" max="6" step="0.5" value="0" /></label>
+      <label class="ctrl-lab flt-lab">FLT <input class="filter" type="range" min="-1" max="1" step="0.01" value="0" title="Low-pass ← 0 → High-pass (double-click resets)" /></label>
+      <label class="ctrl-lab vol-lab">VOL <input class="vol" type="range" min="0" max="1" step="0.01" value="1" /></label>
+    </div>
+    <div class="row fx-row">
+      <span class="sec-lab">FX</span>
+      <button class="t-btn fx delay" data-act="deck${id}.delay">DLY</button>
+      <button class="t-btn fx frac" data-act="deck${id}.delayFrac">1/2</button>
+      <label class="ctrl-lab">WET <input class="wet" type="range" min="0" max="1" step="0.01" value="0.55" /></label>
+      <label class="ctrl-lab">FB <input class="fb" type="range" min="0" max="0.9" step="0.01" value="0.5" /></label>
+      <button class="t-btn fx reverb" data-act="deck${id}.reverb">VRB</button>
+      <button class="t-btn fx echo" data-act="deck${id}.echoOut">ECHO OUT</button>
+    </div>
   </div>
 `
 
@@ -144,18 +244,34 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
   return {
     root,
     name: q('.track-name'),
-    bpm: q('.bpm'),
-    key: q('.key'),
+    barBeat: q('.bar-beat'),
     pos: q('.pos'),
+    rem: q('.rem'),
+    bpm: q('.bpm'),
+    origBpm: q('.orig-bpm'),
+    pitchBadge: q('.pitch-badge'),
+    keyCamelot: q('.key-camelot'),
+    keyName: q('.key-name'),
+    keylockBtn: q('.keylock'),
+    syncBtn: q('.sync'),
+    overview: q('.overview'),
+    waveform: q('.waveform'),
+    bpbBtn: q('.bpb-btn'),
+    phraseBtn: q('.phrase-btn'),
+    wfRgbBtn: q('.wf-rgb'),
+    wfBandsBtn: q('.wf-bands'),
+    wfStemsBtn: q('.wf-stems'),
+    zoomOutBtn: q('.zoom-out'),
+    zoomInBtn: q('.zoom-in'),
+    zoomVal: q('.zoom-val'),
     rate: q('.rate'),
     rateVal: q('.rate-val'),
+    rateResetBtn: q('.rate-rst'),
     playBtn: q('.play'),
     cueBtn: q('.cue'),
-    syncBtn: q('.sync'),
-    keylockBtn: q('.keylock'),
-    waveform: q('.waveform'),
     hotcueBtns: [1, 2, 3, 4].map((n) => q(`.hc${n}`)),
     stemsBox: q('.stems-row'),
+    stemMuteBtns: Array.from(root.querySelectorAll<HTMLButtonElement>('.stem-pill')),
     stemSliders: Array.from(root.querySelectorAll<HTMLInputElement>('.stem input')),
     eqLow: q('.eq-low'),
     eqMid: q('.eq-mid'),
@@ -182,9 +298,10 @@ export function buildApp(root: HTMLElement): AppRefs {
 
   const header = document.createElement('header')
   const addBtn = document.createElement('button')
-  addBtn.textContent = 'add tracks…'
+  addBtn.className = 'add-btn'
+  addBtn.textContent = '+ add tracks…'
   header.innerHTML =
-    '<h1>VIBEDECK</h1><span class="hint">drop audio anywhere · full key map in README.md</span><span class="mem-meter"></span><span class="env-setup" hidden><button class="env-install">install analysis env</button><button class="env-install-stems" title="adds demucs + torch (~2 GB, one time)">+ stems</button></span>'
+    '<h1>VIBEDECK</h1><span class="hint">drop audio anywhere · hover overview to count intro bars · full key map in README.md</span><span class="mem-meter"></span><span class="env-setup" hidden><button class="env-install">install analysis env</button><button class="env-install-stems" title="adds demucs + torch (~2 GB, one time)">+ stems</button></span>'
   header.append(addBtn)
 
   const main = document.createElement('main')
@@ -194,18 +311,21 @@ export function buildApp(root: HTMLElement): AppRefs {
   const mixer = document.createElement('section')
   mixer.className = 'mixer'
   mixer.innerHTML = `
-    <div class="xf-row"><span>A</span><input class="xfader" type="range" min="0" max="1" step="0.01" value="0.5" /><span>B</span></div>
+    <div class="panel-title mixer-title">MIXER</div>
+    <div class="xf-row"><span class="xf-a">A</span><input class="xfader" type="range" min="0" max="1" step="0.01" value="0.5" /><span class="xf-b">B</span></div>
     <button class="t-btn xf-center" data-act="mix.crossCenter">CENTER</button>
-    <button class="t-btn split-cue" data-act="mix.splitCue" title="master on ch 1/2, headphone cue on ch 3/4 (use an aggregate audio device)">SPLIT CUE</button>
-    <button class="t-btn auto-gain" data-act="mix.autoGain" title="normalize tracks to ${-14} LUFS via trim on load">AUTO GAIN</button>
-    <button class="t-btn rec-btn" data-act="mix.record" title="record the master bus to ~/Music/vibedeck/ (blocked while SoundCloud tracks are loaded)">REC</button>
-    <div class="row"><span>MASTER</span><input class="master" type="range" min="0" max="1" step="0.01" value="0.85" style="flex:1" /></div>
+    <div class="mixer-toggles">
+      <button class="t-btn split-cue" data-act="mix.splitCue" title="master on ch 1/2, headphone cue on ch 3/4 (use an aggregate audio device)">SPLIT CUE</button>
+      <button class="t-btn auto-gain" data-act="mix.autoGain" title="normalize tracks to ${-14} LUFS via trim on load">AUTO GAIN</button>
+      <button class="t-btn rec-btn" data-act="mix.record" title="record the master bus to ~/Music/vibedeck/ (blocked while SoundCloud tracks are loaded)">● REC</button>
+    </div>
+    <div class="row master-row"><span class="sec-lab">MASTER</span><input class="master" type="range" min="0" max="1" step="0.01" value="0.85" style="flex:1" /></div>
     <div class="sampler-box">
-      <div class="panel-title">SAMPLER <span class="sampler-hint">drop on pads · alt+click clears</span></div>
+      <div class="panel-title">SAMPLER <span class="sampler-hint">drop · ⌥clr</span></div>
       <div class="sampler-pads">
         ${[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `<button class="smp" data-act="sampler.pad${n}">${n}</button>`).join('\n        ')}
       </div>
-      <div class="row"><span>SMP</span><input class="sampler-vol" type="range" min="0" max="1" step="0.01" value="0.9" style="flex:1" /></div>
+      <div class="row"><span class="sec-lab">SMP</span><input class="sampler-vol" type="range" min="0" max="1" step="0.01" value="0.9" style="flex:1" /></div>
     </div>`
 
   main.append(deckA.root, mixer, deckB.root)
@@ -215,7 +335,7 @@ export function buildApp(root: HTMLElement): AppRefs {
     <section class="crate">
       <div class="panel-title">CRATE <span class="crate-count"></span></div>
       <div class="crate-tools">
-        <input class="crate-q" type="text" placeholder="search…" />
+        <input class="crate-q" type="text" placeholder="search name, bpm, key…" />
         <select class="crate-sort">
           <option value="name">name</option>
           <option value="bpm">bpm</option>
@@ -234,9 +354,9 @@ export function buildApp(root: HTMLElement): AppRefs {
     <section class="midi-panel">
       <div class="panel-title">MIDI <span class="midi-devices"></span></div>
       <div class="midi-tools">
-        <button class="midi-wizard">auto-map wizard</button>
-        <button class="midi-ko2">load K.O. II preset</button>
-        <button class="midi-watch">watch midi</button>
+        <button class="midi-wizard">auto-map</button>
+        <button class="midi-ko2">K.O. II preset</button>
+        <button class="midi-watch">watch</button>
       </div>
       <div class="midi-wizard-status"></div>
       <div class="midi-actions"></div>

@@ -1,120 +1,600 @@
 import type { Deck } from './deck'
 
-export const HC_COLORS = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6']
+export const HC_COLORS = ['#f43f5e', '#f59e0b', '#10b981', '#3b82f6'] as const
+export const CUE_COLOR = '#fbbf24'
 
-const PLAYHEAD_FRAC = 0.25 // playhead sits 25% from the left
-const PEAK_BUCKET = 512 // samples per peak bucket
+/** Order matches STEM_ORDER: ['drums', 'bass', 'other', 'vocals'] */
+export const STEM_META = [
+  { key: 'drums', short: 'DRM', label: 'DRUMS', color: '#f59e0b', rgb: [245, 158, 11] as const },
+  { key: 'bass', short: 'BAS', label: 'BASS', color: '#f43f5e', rgb: [244, 63, 94] as const },
+  { key: 'other', short: 'OTH', label: 'OTHER', color: '#06b6d4', rgb: [6, 182, 212] as const },
+  { key: 'vocals', short: 'VOX', label: 'VOCALS', color: '#c084fc', rgb: [192, 132, 252] as const }
+] as const
+
+export const BAND_META = [
+  { short: 'LOW', color: '#f43f5e', rgb: [244, 63, 94] as const },
+  { short: 'MID', color: '#22c55e', rgb: [34, 197, 94] as const },
+  { short: 'HI', color: '#38bdf8', rgb: [56, 189, 248] as const }
+] as const
+
+const CAMELOT_COLORS: Record<number, string> = {
+  1: '#34d399',
+  2: '#4ade80',
+  3: '#a3e635',
+  4: '#facc15',
+  5: '#fbbf24',
+  6: '#fb923c',
+  7: '#f87171',
+  8: '#f472b6',
+  9: '#e879f9',
+  10: '#a78bfa',
+  11: '#60a5fa',
+  12: '#22d3ee'
+}
+
+export function camelotColor(code?: string): string | null {
+  const m = /^(\d{1,2})[AB]$/i.exec(code ?? '')
+  if (!m) return null
+  return CAMELOT_COLORS[Number(m[1])] ?? null
+}
+
+export type WaveformMode = 'rgb' | 'bands' | 'stems'
+
+const PLAYHEAD_FRAC = 0.25 // playhead sits 25% from the left in close-up view
+const PEAK_BUCKET = 512 // samples per base bucket
+
+interface PeakPyramid {
+  levels: Float32Array[]
+  pps: number
+  duration: number
+}
+
+interface FreqPyramid {
+  amp: Float32Array[]
+  lo: Float32Array[]
+  mid: Float32Array[]
+  hi: Float32Array[]
+  pps: number
+  duration: number
+}
+
+function buildMipLevels(base: Float32Array): Float32Array[] {
+  const levels: Float32Array[] = [base]
+  while (levels[levels.length - 1].length > 256) {
+    const prev = levels[levels.length - 1]
+    const next = new Float32Array(Math.ceil(prev.length / 4))
+    for (let i = 0; i < next.length; i++) {
+      let m = 0
+      const en = Math.min(prev.length, (i + 1) * 4)
+      for (let j = i * 4; j < en; j++) {
+        if (prev[j] > m) m = prev[j]
+      }
+      next[i] = m
+    }
+    levels.push(next)
+  }
+  return levels
+}
+
+function buildPeakPyramid(buffer: AudioBuffer): PeakPyramid {
+  const n = buffer.length
+  const buckets = Math.ceil(n / PEAK_BUCKET)
+  const peaks = new Float32Array(buckets)
+  const chs: Float32Array[] = []
+  for (let c = 0; c < Math.min(2, buffer.numberOfChannels); c++) chs.push(buffer.getChannelData(c))
+  for (let b = 0; b < buckets; b++) {
+    let m = 0
+    const st = b * PEAK_BUCKET
+    const en = Math.min(n, st + PEAK_BUCKET)
+    for (let i = st; i < en; i++) {
+      for (const d of chs) {
+        const v = Math.abs(d[i])
+        if (v > m) m = v
+      }
+    }
+    peaks[b] = m
+  }
+  return {
+    levels: buildMipLevels(peaks),
+    pps: buffer.sampleRate / PEAK_BUCKET,
+    duration: buffer.duration
+  }
+}
 
 /**
- * Scrolling waveform with beatgrid, cue + hot-cue markers.
- * Click/drag to seek, wheel to zoom.
+ * Single-pass 3-band spectral peak extractor (low <250Hz, mid 250–3.2kHz,
+ * high >3.2kHz) using two 1-pole IIR filters at 2× stride (~15ms per 5-min
+ * track). Powers both the Serato-style RGB waveform and the 3-band lane view.
+ */
+function buildFreqPyramid(buffer: AudioBuffer): FreqPyramid {
+  const n = buffer.length
+  const sr = buffer.sampleRate
+  const buckets = Math.ceil(n / PEAK_BUCKET)
+  const amp = new Float32Array(buckets)
+  const lo = new Float32Array(buckets)
+  const mid = new Float32Array(buckets)
+  const hi = new Float32Array(buckets)
+
+  const ch0 = buffer.getChannelData(0)
+  const ch1 = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : null
+
+  const stride = 2
+  const effSr = sr / stride
+  const aLo = 1 - Math.exp((-2 * Math.PI * 250) / effSr)
+  const aHi = 1 - Math.exp((-2 * Math.PI * 3200) / effSr)
+  let lpLo = 0
+  let lpHi = 0
+
+  for (let b = 0; b < buckets; b++) {
+    const st = b * PEAK_BUCKET
+    const en = Math.min(n, st + PEAK_BUCKET)
+    let mAmp = 0
+    let mLo = 0
+    let mMid = 0
+    let mHi = 0
+    for (let i = st; i < en; i += stride) {
+      const x = ch1 ? 0.5 * (ch0[i] + ch1[i]) : ch0[i]
+      const ax = x < 0 ? -x : x
+      if (ax > mAmp) mAmp = ax
+      lpLo += aLo * (x - lpLo)
+      lpHi += aHi * (x - lpHi)
+      const vLo = lpLo < 0 ? -lpLo : lpLo
+      const vMid = lpHi - lpLo
+      const aMid = vMid < 0 ? -vMid : vMid
+      const vHi = x - lpHi
+      const aH = vHi < 0 ? -vHi : vHi
+      if (vLo > mLo) mLo = vLo
+      if (aMid > mMid) mMid = aMid
+      if (aH > mHi) mHi = aH
+    }
+    amp[b] = mAmp
+    lo[b] = Math.min(1, mLo * 1.15)
+    mid[b] = Math.min(1, mMid * 1.35)
+    hi[b] = Math.min(1, mHi * 1.9)
+  }
+
+  return {
+    amp: buildMipLevels(amp),
+    lo: buildMipLevels(lo),
+    mid: buildMipLevels(mid),
+    hi: buildMipLevels(hi),
+    pps: sr / PEAK_BUCKET,
+    duration: buffer.duration
+  }
+}
+
+function pickMip(levels: Float32Array[], basePps: number, secPerPx: number): { arr: Float32Array; pps: number; idx: number } {
+  const bucketsPerPx = secPerPx * basePps
+  let idx = 0
+  while (idx < levels.length - 1 && bucketsPerPx / Math.pow(4, idx) > 4) idx++
+  return { arr: levels[idx], pps: basePps / Math.pow(4, idx), idx }
+}
+
+function sampleMax(arr: Float32Array, pps: number, ta: number, tb: number): number {
+  const len = arr.length
+  if (tb < 0 || ta > len / pps) return 0
+  const i0 = Math.max(0, Math.floor(ta * pps))
+  const i1 = Math.min(len, Math.ceil(tb * pps))
+  let m = 0
+  for (let i = i0; i < i1; i++) {
+    if (arr[i] > m) m = arr[i]
+  }
+  return m
+}
+
+/** Blend Low (rose/red) + Mid (amber/emerald) + High (cyan/blue) into vivid RGB */
+function freqRgb(lo: number, mid: number, hi: number): [number, number, number] {
+  const wLo = lo * 1.15
+  const wMid = mid * 1.3
+  const wHi = hi * 1.75
+  const sum = wLo + wMid + wHi + 1e-6
+  const r = (wLo * 248 + wMid * 68 + wHi * 56) / sum
+  const g = (wLo * 66 + wMid * 212 + wHi * 195) / sum
+  const b = (wLo * 92 + wMid * 138 + wHi * 250) / sum
+  return [Math.min(255, Math.round(r)), Math.min(255, Math.round(g)), Math.min(255, Math.round(b))]
+}
+
+function fmtShortTime(sec: number): string {
+  if (!isFinite(sec) || sec < 0) sec = 0
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec - m * 60)
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function barBeatAt(deck: Deck, sec: number): { bar: number; beat: number } | null {
+  const g = deck.track?.grid
+  if (!g || g.bpm <= 0) return null
+  const bpb = g.beatsPerBar ?? 4
+  const beatDur = 60 / g.bpm
+  const idx = Math.floor((sec - g.offset) / beatDur + 1e-4)
+  const bar = idx >= 0 ? Math.floor(idx / bpb) + 1 : Math.floor(idx / bpb)
+  const beat = (((idx % bpb) + bpb) % bpb) + 1
+  return { bar, beat }
+}
+
+/**
+ * Dual-view deck waveform controller:
+ *  1. Zoom-out Overview Strip — entire song unsegmented, phrase blocks, bar
+ *     numbers, hover intro-length inspector, viewport bracket, click/drag seek.
+ *  2. Close-up Scrolling Waveform — supports 4-lane separated Stems view,
+ *     3-lane Low/Mid/High view, and Serato-style RGB view, with beatgrid,
+ *     downbeat numbers, loop region, and colored cue flags.
  */
 export class WaveformView {
-  private canvas: HTMLCanvasElement
-  private g: CanvasRenderingContext2D
-  private peaks: Float32Array | null = null
-  /** mip-pyramid: level n aggregates 4^n base buckets — O(pixels) redraw at any zoom */
-  private levels: Float32Array[] = []
-  private pps = 0 // base buckets (512-sample) per second
+  private overviewCanvas: HTMLCanvasElement
+  private og: CanvasRenderingContext2D
+  private detailCanvas: HTMLCanvasElement
+  private dg: CanvasRenderingContext2D
+
+  private freq: FreqPyramid | null = null
+  private stemPyramids: PeakPyramid[] = []
+  private duration = 0
+  private lastT0 = 0
+  private hoverOverviewFrac: number | null = null
+
+  mode: WaveformMode = 'rgb'
   zoomSec = 10
+  dirty = true
   onSeek?: (timeSec: number) => void
+  onModeChange?: (mode: WaveformMode) => void
 
-  constructor(canvas: HTMLCanvasElement) {
-    this.canvas = canvas
-    this.g = canvas.getContext('2d')!
-    const resize = () => {
-      const dpr = window.devicePixelRatio || 1
-      const r = canvas.getBoundingClientRect()
-      canvas.width = Math.max(1, Math.floor(r.width * dpr))
-      canvas.height = Math.max(1, Math.floor(r.height * dpr))
+  constructor(overviewCanvas: HTMLCanvasElement, detailCanvas: HTMLCanvasElement) {
+    this.overviewCanvas = overviewCanvas
+    this.og = overviewCanvas.getContext('2d')!
+    this.detailCanvas = detailCanvas
+    this.dg = detailCanvas.getContext('2d')!
+
+    const observe = (canvas: HTMLCanvasElement) => {
+      const resize = () => {
+        const dpr = window.devicePixelRatio || 1
+        const r = canvas.getBoundingClientRect()
+        canvas.width = Math.max(1, Math.floor(r.width * dpr))
+        canvas.height = Math.max(1, Math.floor(r.height * dpr))
+        this.dirty = true
+      }
+      new ResizeObserver(resize).observe(canvas)
+      resize()
     }
-    new ResizeObserver(resize).observe(canvas)
-    resize()
+    observe(overviewCanvas)
+    observe(detailCanvas)
 
-    canvas.addEventListener('pointerdown', (e) => {
-      canvas.setPointerCapture(e.pointerId)
-      this.emitSeek(e)
+    // Overview interactions: click/drag to seek anywhere in full track, hover inspects bar/time
+    const seekOverview = (e: PointerEvent) => {
+      if (!this.onSeek || this.duration <= 0) return
+      const rect = overviewCanvas.getBoundingClientRect()
+      const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+      this.onSeek(frac * this.duration)
+      this.dirty = true
+    }
+    overviewCanvas.addEventListener('pointerdown', (e) => {
+      overviewCanvas.setPointerCapture(e.pointerId)
+      seekOverview(e)
     })
-    canvas.addEventListener('pointermove', (e) => {
-      if (e.buttons & 1) this.emitSeek(e)
+    overviewCanvas.addEventListener('pointermove', (e) => {
+      const rect = overviewCanvas.getBoundingClientRect()
+      this.hoverOverviewFrac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+      if (e.buttons & 1) seekOverview(e)
+      this.dirty = true
     })
-    canvas.addEventListener(
+    overviewCanvas.addEventListener('pointerleave', () => {
+      this.hoverOverviewFrac = null
+      this.dirty = true
+    })
+
+    // Detail interactions: click/drag to scrub, wheel to zoom
+    const seekDetail = (e: PointerEvent) => {
+      if (!this.onSeek || !this.freq) return
+      const rect = detailCanvas.getBoundingClientRect()
+      const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+      this.onSeek(this.lastT0 + frac * this.zoomSec)
+      this.dirty = true
+    }
+    detailCanvas.addEventListener('pointerdown', (e) => {
+      detailCanvas.setPointerCapture(e.pointerId)
+      seekDetail(e)
+    })
+    detailCanvas.addEventListener('pointermove', (e) => {
+      if (e.buttons & 1) seekDetail(e)
+    })
+    detailCanvas.addEventListener(
       'wheel',
       (e) => {
         e.preventDefault()
-        this.zoomSec = Math.min(120, Math.max(1, this.zoomSec * (e.deltaY > 0 ? 1.25 : 0.8)))
+        this.setZoom(this.zoomSec * (e.deltaY > 0 ? 1.25 : 0.8))
       },
       { passive: false }
     )
   }
 
-  private emitSeek(e: PointerEvent): void {
-    if (!this.onSeek || !this.peaks) return
-    const rect = this.canvas.getBoundingClientRect()
-    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
-    const t = this.lastT0 + frac * this.zoomSec
-    this.onSeek(t)
+  get hasStems(): boolean {
+    return this.stemPyramids.length === 4
   }
 
-  private lastT0 = 0
+  markDirty(): void {
+    this.dirty = true
+  }
+
+  setZoom(sec: number): void {
+    this.zoomSec = Math.min(60, Math.max(2, sec))
+    this.dirty = true
+  }
+
+  setMode(mode: WaveformMode): void {
+    if (mode === 'stems' && !this.hasStems) return
+    this.mode = mode
+    this.dirty = true
+    this.onModeChange?.(this.mode)
+  }
 
   setBuffer(buffer: AudioBuffer | null): void {
     if (!buffer) {
-      this.peaks = null
-      this.levels = []
+      this.freq = null
+      this.stemPyramids = []
+      this.duration = 0
+      this.mode = 'rgb'
+      this.dirty = true
       return
     }
-    const n = buffer.length
-    const buckets = Math.ceil(n / PEAK_BUCKET)
-    const peaks = new Float32Array(buckets)
-    const chs: Float32Array[] = []
-    for (let c = 0; c < Math.min(2, buffer.numberOfChannels); c++) chs.push(buffer.getChannelData(c))
-    for (let b = 0; b < buckets; b++) {
-      let m = 0
-      const st = b * PEAK_BUCKET
-      const en = Math.min(n, st + PEAK_BUCKET)
-      for (let i = st; i < en; i++) {
-        for (const d of chs) {
-          const v = Math.abs(d[i])
-          if (v > m) m = v
-        }
-      }
-      peaks[b] = m
-    }
-    this.peaks = peaks
-    this.pps = buffer.sampleRate / PEAK_BUCKET
+    this.freq = buildFreqPyramid(buffer)
+    this.duration = buffer.duration
+    // Reset stems until setStems() supplies them for this track
+    this.stemPyramids = []
+    if (this.mode === 'stems') this.mode = 'rgb'
+    this.dirty = true
+    this.onModeChange?.(this.mode)
+  }
 
-    // build mip levels (4x max-aggregation each) until coarse enough
-    const levels: Float32Array[] = [peaks]
-    while (levels[levels.length - 1].length > 256) {
-      const prev = levels[levels.length - 1]
-      const next = new Float32Array(Math.ceil(prev.length / 4))
-      for (let i = 0; i < next.length; i++) {
-        let m = 0
-        const en = Math.min(prev.length, (i + 1) * 4)
-        for (let j = i * 4; j < en; j++) {
-          if (prev[j] > m) m = prev[j]
-        }
-        next[i] = m
-      }
-      levels.push(next)
+  setStems(buffers: AudioBuffer[]): void {
+    if (buffers.length === 4) {
+      this.stemPyramids = buffers.map((b) => buildPeakPyramid(b))
+      this.mode = 'stems' // auto-upgrade to separated 4-stem lanes!
+    } else {
+      this.stemPyramids = []
+      if (this.mode === 'stems') this.mode = 'rgb'
     }
-    this.levels = levels
+    this.dirty = true
+    this.onModeChange?.(this.mode)
   }
 
   draw(deck: Deck): void {
-    const c = this.canvas
-    const g = this.g
+    this.dirty = false
+    this.drawOverview(deck)
+    this.drawDetail(deck)
+  }
+
+  // -------------------------------------------------------------------------
+  // 1. Zoom-out Overview Strip (entire track, unsegmented, phrase/bar ruler)
+  // -------------------------------------------------------------------------
+
+  private drawOverview(deck: Deck): void {
+    const c = this.overviewCanvas
+    const g = this.og
     const w = c.width
     const h = c.height
-    g.fillStyle = '#0e1116'
+    const dpr = window.devicePixelRatio || 1
+    const rulerH = Math.round(14 * dpr)
+    const bodyY = rulerH
+    const bodyH = Math.max(1, h - rulerH)
+
+    g.fillStyle = '#0c0f14'
     g.fillRect(0, 0, w, h)
 
-    if (!this.peaks) {
+    // Ruler strip background
+    g.fillStyle = '#11161e'
+    g.fillRect(0, 0, w, rulerH)
+    g.strokeStyle = 'rgba(255,255,255,0.08)'
+    g.beginPath()
+    g.moveTo(0, rulerH + 0.5)
+    g.lineTo(w, rulerH + 0.5)
+    g.stroke()
+
+    if (!this.freq || this.duration <= 0) {
       g.fillStyle = '#3a424d'
-      g.font = `${12 * (window.devicePixelRatio || 1)}px ui-monospace, monospace`
+      g.font = `${10 * dpr}px ui-monospace, monospace`
       g.textAlign = 'center'
-      g.fillText('drop a track', w / 2, h / 2)
+      g.fillText('full-track overview — drop audio to inspect structure & intro', w / 2, bodyY + bodyH / 2 + 3 * dpr)
+      return
+    }
+
+    const dur = this.duration
+    const secPerPx = dur / w
+    const grid = deck.track?.grid
+    const bpb = grid?.beatsPerBar ?? 4
+    const phraseBars = grid?.phraseBars ?? 8
+
+    // Alternating phrase blocks + ruler bar numbers
+    if (grid && grid.bpm > 0) {
+      const barDur = (60 / grid.bpm) * bpb
+      const phraseDur = barDur * phraseBars
+      const firstPhrase = Math.floor(-grid.offset / phraseDur) - 1
+      const lastPhrase = Math.ceil((dur - grid.offset) / phraseDur) + 1
+
+      // Shading blocks (every other phrase block)
+      for (let p = firstPhrase; p <= lastPhrase; p++) {
+        const ts = grid.offset + p * phraseDur
+        const te = ts + phraseDur
+        const x0 = Math.max(0, Math.round(ts / secPerPx))
+        const x1 = Math.min(w, Math.round(te / secPerPx))
+        if (x1 <= x0) continue
+        if (((p % 2) + 2) % 2 === 0) {
+          g.fillStyle = 'rgba(255,255,255,0.032)'
+          g.fillRect(x0, bodyY, x1 - x0, bodyH)
+        }
+      }
+
+      // Phrase ticks + bar labels (avoid label collisions on very long tracks)
+      const minLabelPx = 28 * dpr
+      let stepPhrases = 1
+      while ((phraseDur * stepPhrases) / secPerPx < minLabelPx) stepPhrases *= 2
+
+      g.font = `600 ${9 * dpr}px ui-monospace, monospace`
+      g.textAlign = 'left'
+      g.textBaseline = 'middle'
+      for (let p = firstPhrase; p <= lastPhrase; p++) {
+        const ts = grid.offset + p * phraseDur
+        if (ts < -0.001 || ts > dur) continue
+        const x = Math.round(ts / secPerPx)
+        const isBar1 = p === 0
+        g.strokeStyle = isBar1 ? 'rgba(251,191,36,0.75)' : 'rgba(255,255,255,0.16)'
+        g.lineWidth = isBar1 ? Math.max(1.5, dpr) : 1
+        g.beginPath()
+        g.moveTo(x + 0.5, isBar1 ? 0 : rulerH)
+        g.lineTo(x + 0.5, h)
+        g.stroke()
+        g.lineWidth = 1
+
+        if (isBar1 || ((p % stepPhrases) + stepPhrases) % stepPhrases === 0) {
+          const barNum = p >= 0 ? p * phraseBars + 1 : p * phraseBars
+          g.fillStyle = isBar1 ? '#fbbf24' : '#8b95a5'
+          g.fillText(isBar1 ? 'B1' : String(barNum), x + 3 * dpr, rulerH / 2)
+        }
+      }
+      g.textBaseline = 'alphabetic'
+    }
+
+    // Waveform body: 4-stem lanes, 3-band lanes, or RGB unified
+    if (this.mode === 'stems' && this.hasStems) {
+      this.drawStemLanes(g, deck, 0, bodyY, w, bodyH, 0, secPerPx, false)
+    } else if (this.mode === 'bands') {
+      this.drawBandLanes(g, 0, bodyY, w, bodyH, 0, secPerPx, false)
+    } else {
+      this.drawRgbWave(g, 0, bodyY, w, bodyH, 0, secPerPx)
+    }
+
+    // Subtle dim veil over played portion
+    const pos = deck.audiblePosition
+    const playX = Math.max(0, Math.min(w, Math.round(pos / secPerPx)))
+    g.fillStyle = 'rgba(6,8,12,0.34)'
+    g.fillRect(0, bodyY, playX, bodyH)
+
+    // Active loop region
+    if (deck.activeLoop) {
+      const lx0 = Math.max(0, (deck.activeLoop.start) / secPerPx)
+      const lx1 = Math.min(w, (deck.activeLoop.start + deck.activeLoop.len) / secPerPx)
+      g.fillStyle = 'rgba(168,85,247,0.28)'
+      g.fillRect(lx0, bodyY, Math.max(2, lx1 - lx0), bodyH)
+      g.strokeStyle = '#c084fc'
+      g.strokeRect(lx0 + 0.5, bodyY + 0.5, Math.max(2, lx1 - lx0), bodyH - 1)
+    }
+
+    // Close-up viewport bracket
+    const t0 = pos - this.zoomSec * PLAYHEAD_FRAC
+    const t1 = t0 + this.zoomSec
+    const vx0 = Math.max(0, Math.round(t0 / secPerPx))
+    const vx1 = Math.min(w, Math.round(t1 / secPerPx))
+    g.strokeStyle = deck.id === 'A' ? 'rgba(255,92,57,0.85)' : 'rgba(56,189,248,0.85)'
+    g.lineWidth = Math.max(1, dpr)
+    g.strokeRect(vx0 + 0.5, bodyY + 0.5, Math.max(4, vx1 - vx0), bodyH - 1)
+    g.lineWidth = 1
+
+    // Cue & Hot Cue ticks across the whole track
+    this.drawOverviewMarker(g, w, h, bodyY, secPerPx, dpr, deck.cuePoint, CUE_COLOR, 'C')
+    for (let i = 0; i < deck.hotCues.length && i < HC_COLORS.length; i++) {
+      const hc = deck.hotCues[i]
+      if (hc != null) this.drawOverviewMarker(g, w, h, bodyY, secPerPx, dpr, hc, HC_COLORS[i], String(i + 1))
+    }
+
+    // Playhead
+    g.strokeStyle = '#ffffff'
+    g.lineWidth = Math.max(1.5, 1.5 * dpr)
+    g.beginPath()
+    g.moveTo(playX + 0.5, 0)
+    g.lineTo(playX + 0.5, h)
+    g.stroke()
+    g.lineWidth = 1
+
+    // Hover inspector — shows exact bar + timestamp for measuring intros/phrases
+    if (this.hoverOverviewFrac != null) {
+      const ht = this.hoverOverviewFrac * dur
+      const hx = Math.round(this.hoverOverviewFrac * w)
+      g.strokeStyle = 'rgba(255,255,255,0.55)'
+      g.setLineDash([2 * dpr, 2 * dpr])
+      g.beginPath()
+      g.moveTo(hx + 0.5, rulerH)
+      g.lineTo(hx + 0.5, h)
+      g.stroke()
+      g.setLineDash([])
+
+      const bb = barBeatAt(deck, ht)
+      const label = bb ? `BAR ${bb.bar}.${bb.beat} · ${fmtShortTime(ht)}` : fmtShortTime(ht)
+      g.font = `600 ${9.5 * dpr}px ui-monospace, monospace`
+      const tw = g.measureText(label).width + 10 * dpr
+      const bx = Math.min(w - tw - 2 * dpr, Math.max(2 * dpr, hx - tw / 2))
+      g.fillStyle = 'rgba(11,13,16,0.92)'
+      g.fillRect(bx, 1 * dpr, tw, rulerH - 2 * dpr)
+      g.strokeStyle = 'rgba(255,255,255,0.28)'
+      g.strokeRect(bx + 0.5, 1 * dpr + 0.5, tw - 1, rulerH - 2 * dpr - 1)
+      g.fillStyle = '#f8fafc'
+      g.textAlign = 'center'
+      g.textBaseline = 'middle'
+      g.fillText(label, bx + tw / 2, rulerH / 2)
+      g.textBaseline = 'alphabetic'
+    }
+  }
+
+  private drawOverviewMarker(
+    g: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    bodyY: number,
+    secPerPx: number,
+    dpr: number,
+    t: number,
+    color: string,
+    label: string
+  ): void {
+    const x = Math.round(t / secPerPx)
+    if (x < 0 || x > w) return
+    g.strokeStyle = color
+    g.lineWidth = Math.max(1.5, 1.5 * dpr)
+    g.beginPath()
+    g.moveTo(x + 0.5, bodyY)
+    g.lineTo(x + 0.5, h)
+    g.stroke()
+    g.lineWidth = 1
+
+    const pw = 10 * dpr
+    const ph = 11 * dpr
+    g.fillStyle = color
+    g.fillRect(x - pw / 2, bodyY, pw, ph)
+    g.fillStyle = '#090b0e'
+    g.font = `700 ${8.5 * dpr}px ui-monospace, monospace`
+    g.textAlign = 'center'
+    g.textBaseline = 'middle'
+    g.fillText(label, x, bodyY + ph / 2 + 0.5 * dpr)
+    g.textBaseline = 'alphabetic'
+  }
+
+  // -------------------------------------------------------------------------
+  // 2. Close-up Scrolling Waveform (4-stem lanes / 3-band lanes / RGB)
+  // -------------------------------------------------------------------------
+
+  private drawDetail(deck: Deck): void {
+    const c = this.detailCanvas
+    const g = this.dg
+    const w = c.width
+    const h = c.height
+    const dpr = window.devicePixelRatio || 1
+    const rulerH = Math.round(16 * dpr)
+    const bodyY = rulerH
+    const bodyH = Math.max(1, h - rulerH)
+
+    g.fillStyle = '#0c0f14'
+    g.fillRect(0, 0, w, h)
+
+    g.fillStyle = '#11161e'
+    g.fillRect(0, 0, w, rulerH)
+    g.strokeStyle = 'rgba(255,255,255,0.08)'
+    g.beginPath()
+    g.moveTo(0, rulerH + 0.5)
+    g.lineTo(w, rulerH + 0.5)
+    g.stroke()
+
+    if (!this.freq) {
+      g.fillStyle = '#3a424d'
+      g.font = `${12 * dpr}px ui-monospace, monospace`
+      g.textAlign = 'center'
+      g.fillText('drop a track', w / 2, bodyY + bodyH / 2 + 4 * dpr)
       return
     }
 
@@ -124,113 +604,312 @@ export class WaveformView {
     this.lastT0 = t0
     const secPerPx = this.zoomSec / w
 
-    // center line
-    g.strokeStyle = 'rgba(255,255,255,0.08)'
-    g.beginPath()
-    g.moveTo(0, h / 2)
-    g.lineTo(w, h / 2)
-    g.stroke()
-
-    // waveform — pick the mip level so each pixel column scans ~1-4 buckets
-    const bucketsPerPx = secPerPx * this.pps
-    let levelIdx = 0
-    while (levelIdx < this.levels.length - 1 && bucketsPerPx / Math.pow(4, levelIdx) > 4) levelIdx++
-    const lvl = this.levels[levelIdx]
-    const lvlPps = this.pps / Math.pow(4, levelIdx)
-    g.fillStyle = deck.id === 'A' ? '#ff5c39' : '#38bdf8'
-    for (let x = 0; x < w; x++) {
-      const ta = t0 + x * secPerPx
-      const tb = ta + secPerPx
-      if (tb < 0 || ta > lvl.length / lvlPps) continue
-      let m = 0
-      const i0 = Math.max(0, Math.floor(ta * lvlPps))
-      const i1 = Math.min(lvl.length, Math.ceil(tb * lvlPps))
-      for (let i = i0; i < i1; i++) {
-        if (lvl[i] > m) m = lvl[i]
-      }
-      if (m > 0) {
-        const bh = Math.max(1, m * h * 0.46)
-        g.fillRect(x, h / 2 - bh, 1, bh * 2)
-      }
+    // Waveform body
+    if (this.mode === 'stems' && this.hasStems) {
+      this.drawStemLanes(g, deck, 0, bodyY, w, bodyH, t0, secPerPx, true)
+    } else if (this.mode === 'bands') {
+      this.drawBandLanes(g, 0, bodyY, w, bodyH, t0, secPerPx, true)
+    } else {
+      // center guide line
+      g.strokeStyle = 'rgba(255,255,255,0.07)'
+      g.beginPath()
+      g.moveTo(0, bodyY + bodyH / 2)
+      g.lineTo(w, bodyY + bodyH / 2)
+      g.stroke()
+      this.drawRgbWave(g, 0, bodyY, w, bodyH, t0, secPerPx)
     }
 
-    // beatgrid (grid offset + bpm are in track time, which is what we display)
+    // Beatgrid & downbeat bar numbers
     const grid = deck.track?.grid
     if (grid && grid.bpm > 0) {
       const beat = 60 / grid.bpm
+      const bpb = grid.beatsPerBar ?? 4
+      const phraseBars = grid.phraseBars ?? 8
       let k = Math.floor((t0 - grid.offset) / beat) - 1
+      g.font = `600 ${9.5 * dpr}px ui-monospace, monospace`
+      g.textAlign = 'left'
+      g.textBaseline = 'middle'
       for (;;) {
         const t = grid.offset + k * beat
         if (t > t1) break
         if (t >= t0) {
           const x = Math.round((t - t0) / secPerPx)
-          const major = ((k % 4) + 4) % 4 === 0
-          g.strokeStyle = major ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.15)'
+          const beatInBar = ((k % bpb) + bpb) % bpb
+          const isDownbeat = beatInBar === 0
+          const barZero = Math.floor(k / bpb)
+          const isPhrase = isDownbeat && ((barZero % phraseBars) + phraseBars) % phraseBars === 0
+          const isBar1 = k === 0
+
+          if (isBar1) {
+            g.strokeStyle = 'rgba(251,191,36,0.9)'
+            g.lineWidth = Math.max(1.5, 1.5 * dpr)
+          } else if (isPhrase) {
+            g.strokeStyle = 'rgba(255,255,255,0.58)'
+            g.lineWidth = Math.max(1, dpr)
+          } else if (isDownbeat) {
+            g.strokeStyle = 'rgba(255,255,255,0.32)'
+            g.lineWidth = 1
+          } else {
+            g.strokeStyle = 'rgba(255,255,255,0.1)'
+            g.lineWidth = 1
+          }
           g.beginPath()
-          g.moveTo(x + 0.5, major ? 0 : h * 0.14)
-          g.lineTo(x + 0.5, major ? h : h * 0.86)
+          g.moveTo(x + 0.5, isDownbeat ? 0 : bodyY + bodyH * 0.08)
+          g.lineTo(x + 0.5, isDownbeat ? h : bodyY + bodyH * 0.92)
           g.stroke()
+          g.lineWidth = 1
+
+          if (isDownbeat) {
+            const barNum = barZero >= 0 ? barZero + 1 : barZero
+            g.fillStyle = isBar1 ? '#fbbf24' : isPhrase ? '#f1f5f9' : '#7d8590'
+            g.fillText(isBar1 ? 'BAR 1' : String(barNum), x + 3 * dpr, rulerH / 2)
+          }
         }
         k++
       }
+      g.textBaseline = 'alphabetic'
     }
 
-    // active loop region
+    // Active loop region
     if (deck.activeLoop) {
       const lx0 = (deck.activeLoop.start - t0) / secPerPx
       const lx1 = lx0 + deck.activeLoop.len / secPerPx
-      g.fillStyle = 'rgba(167,139,250,0.16)'
-      g.fillRect(lx0, 0, lx1 - lx0, h)
-      g.strokeStyle = 'rgba(167,139,250,0.85)'
+      g.fillStyle = 'rgba(168,85,247,0.18)'
+      g.fillRect(lx0, bodyY, lx1 - lx0, bodyH)
+      g.strokeStyle = 'rgba(192,132,252,0.9)'
+      g.lineWidth = Math.max(1.5, 1.5 * dpr)
       for (const lx of [lx0, lx1]) {
         g.beginPath()
-        g.moveTo(lx, 0)
+        g.moveTo(lx, bodyY)
         g.lineTo(lx, h)
         g.stroke()
       }
+      g.lineWidth = 1
     }
 
-    // cue marker
-    this.drawMarker(g, w, h, t0, secPerPx, deck.cuePoint, '#f59e0b', 'C')
-    // hot cue markers
-    if (deck.hotCues) {
-      for (let i = 0; i < deck.hotCues.length && i < HC_COLORS.length; i++) {
-        const hc = deck.hotCues[i]
-        if (hc != null) this.drawMarker(g, w, h, t0, secPerPx, hc, HC_COLORS[i], String(i + 1))
-      }
+    // Cue & Hot Cue colored flags
+    this.drawDetailFlag(g, w, h, rulerH, t0, secPerPx, dpr, deck.cuePoint, CUE_COLOR, 'CUE')
+    for (let i = 0; i < deck.hotCues.length && i < HC_COLORS.length; i++) {
+      const hc = deck.hotCues[i]
+      if (hc != null) this.drawDetailFlag(g, w, h, rulerH, t0, secPerPx, dpr, hc, HC_COLORS[i], String(i + 1))
     }
 
-    // playhead
+    // Playhead with top triangle
     const px = Math.round(PLAYHEAD_FRAC * w)
     g.strokeStyle = '#ffffff'
+    g.lineWidth = Math.max(1.5, 1.5 * dpr)
     g.beginPath()
     g.moveTo(px + 0.5, 0)
     g.lineTo(px + 0.5, h)
     g.stroke()
+    g.lineWidth = 1
+
+    const tri = 4.5 * dpr
+    g.fillStyle = '#ffffff'
+    g.beginPath()
+    g.moveTo(px - tri, 0)
+    g.lineTo(px + tri, 0)
+    g.lineTo(px, tri * 1.4)
+    g.closePath()
+    g.fill()
   }
 
-  private drawMarker(
+  private drawDetailFlag(
     g: CanvasRenderingContext2D,
     w: number,
     h: number,
+    rulerH: number,
     t0: number,
     secPerPx: number,
+    dpr: number,
     t: number,
     color: string,
     label: string
   ): void {
     const x = Math.round((t - t0) / secPerPx)
-    if (x < 0 || x > w) return
+    if (x < -20 * dpr || x > w + 20 * dpr) return
     g.strokeStyle = color
-    g.lineWidth = 2
+    g.lineWidth = Math.max(1.5, 2 * dpr)
     g.beginPath()
-    g.moveTo(x + 0.5, 0)
+    g.moveTo(x + 0.5, rulerH)
     g.lineTo(x + 0.5, h)
     g.stroke()
     g.lineWidth = 1
+
+    g.font = `700 ${9 * dpr}px ui-monospace, monospace`
+    const pad = 4 * dpr
+    const tw = Math.max(13 * dpr, g.measureText(label).width + pad * 2)
+    const fh = rulerH - 2 * dpr
     g.fillStyle = color
-    g.font = 'bold 10px ui-monospace, monospace'
+    g.fillRect(x, 1 * dpr, tw, fh)
+    g.fillStyle = '#090b0e'
+    g.textAlign = 'center'
+    g.textBaseline = 'middle'
+    g.fillText(label, x + tw / 2, 1 * dpr + fh / 2 + 0.5 * dpr)
+    g.textBaseline = 'alphabetic'
+  }
+
+  // -------------------------------------------------------------------------
+  // Waveform painters (shared between overview & close-up)
+  // -------------------------------------------------------------------------
+
+  private drawRgbWave(
+    g: CanvasRenderingContext2D,
+    x0: number,
+    y0: number,
+    w: number,
+    h: number,
+    t0: number,
+    secPerPx: number
+  ): void {
+    const f = this.freq!
+    const mip = pickMip(f.amp, f.pps, secPerPx)
+    const ampArr = f.amp[mip.idx]
+    const loArr = f.lo[mip.idx]
+    const midArr = f.mid[mip.idx]
+    const hiArr = f.hi[mip.idx]
+    const pps = mip.pps
+    const cy = y0 + h / 2
+    const maxH = h * 0.46
+    let lastColorKey = -1
+
+    for (let x = 0; x < w; x++) {
+      const ta = t0 + x * secPerPx
+      const tb = ta + secPerPx
+      const a = sampleMax(ampArr, pps, ta, tb)
+      if (a <= 0.002) continue
+      const vLo = sampleMax(loArr, pps, ta, tb)
+      const vMid = sampleMax(midArr, pps, ta, tb)
+      const vHi = sampleMax(hiArr, pps, ta, tb)
+      const [r, gr, b] = freqRgb(vLo, vMid, vHi)
+      const key = ((r >> 3) << 10) | ((gr >> 3) << 5) | (b >> 3)
+      if (key !== lastColorKey) {
+        g.fillStyle = `rgb(${r},${gr},${b})`
+        lastColorKey = key
+      }
+      const bh = Math.max(1, a * maxH)
+      g.fillRect(x0 + x, cy - bh, 1, bh * 2)
+    }
+  }
+
+  private drawBandLanes(
+    g: CanvasRenderingContext2D,
+    x0: number,
+    y0: number,
+    w: number,
+    h: number,
+    t0: number,
+    secPerPx: number,
+    showLabels: boolean
+  ): void {
+    const f = this.freq!
+    const mip = pickMip(f.amp, f.pps, secPerPx)
+    const arrays = [f.lo[mip.idx], f.mid[mip.idx], f.hi[mip.idx]]
+    const pps = mip.pps
+    const laneH = h / 3
+    const dpr = window.devicePixelRatio || 1
+
+    for (let l = 0; l < 3; l++) {
+      const ly = y0 + l * laneH
+      const cy = ly + laneH / 2
+      if (l > 0) {
+        g.strokeStyle = 'rgba(255,255,255,0.06)'
+        g.beginPath()
+        g.moveTo(x0, Math.round(ly) + 0.5)
+        g.lineTo(x0 + w, Math.round(ly) + 0.5)
+        g.stroke()
+      }
+      const arr = arrays[l]
+      const meta = BAND_META[l]
+      g.fillStyle = meta.color
+      const maxH = laneH * 0.44
+      for (let x = 0; x < w; x++) {
+        const ta = t0 + x * secPerPx
+        const m = sampleMax(arr, pps, ta, ta + secPerPx)
+        if (m > 0.004) {
+          const bh = Math.max(1, m * maxH)
+          g.fillRect(x0 + x, cy - bh, 1, bh * 2)
+        }
+      }
+      if (showLabels) {
+        this.drawLaneTag(g, x0, ly, laneH, dpr, meta.short, meta.color, 1)
+      }
+    }
+  }
+
+  private drawStemLanes(
+    g: CanvasRenderingContext2D,
+    deck: Deck,
+    x0: number,
+    y0: number,
+    w: number,
+    h: number,
+    t0: number,
+    secPerPx: number,
+    showLabels: boolean
+  ): void {
+    const laneH = h / 4
+    const dpr = window.devicePixelRatio || 1
+
+    for (let s = 0; s < 4; s++) {
+      const pyr = this.stemPyramids[s]
+      const meta = STEM_META[s]
+      const ly = y0 + s * laneH
+      const cy = ly + laneH / 2
+      const gain = deck.getStemGain(s)
+
+      if (s > 0) {
+        g.strokeStyle = 'rgba(255,255,255,0.07)'
+        g.beginPath()
+        g.moveTo(x0, Math.round(ly) + 0.5)
+        g.lineTo(x0 + w, Math.round(ly) + 0.5)
+        g.stroke()
+      }
+
+      if (pyr) {
+        const mip = pickMip(pyr.levels, pyr.pps, secPerPx)
+        const alpha = 0.16 + 0.84 * Math.min(1, Math.max(0, gain))
+        const [r, gr, b] = meta.rgb
+        g.fillStyle = `rgba(${r},${gr},${b},${alpha.toFixed(2)})`
+        const maxH = laneH * 0.45
+        for (let x = 0; x < w; x++) {
+          const ta = t0 + x * secPerPx
+          const m = sampleMax(mip.arr, mip.pps, ta, ta + secPerPx)
+          if (m > 0.003) {
+            const bh = Math.max(1, m * maxH)
+            g.fillRect(x0 + x, cy - bh, 1, bh * 2)
+          }
+        }
+      }
+
+      if (showLabels) {
+        this.drawLaneTag(g, x0, ly, laneH, dpr, meta.short, meta.color, gain)
+      }
+    }
+  }
+
+  private drawLaneTag(
+    g: CanvasRenderingContext2D,
+    x0: number,
+    ly: number,
+    laneH: number,
+    dpr: number,
+    text: string,
+    color: string,
+    gain: number
+  ): void {
+    const muted = gain < 0.02
+    const tagW = 28 * dpr
+    const tagH = Math.min(laneH - 4 * dpr, 14 * dpr)
+    const ty = ly + (laneH - tagH) / 2
+    g.fillStyle = 'rgba(11,14,20,0.82)'
+    g.fillRect(x0 + 3 * dpr, ty, tagW, tagH)
+    g.fillStyle = muted ? '#4b5563' : color
+    g.fillRect(x0 + 3 * dpr, ty, 3 * dpr, tagH)
+    g.font = `700 ${8.5 * dpr}px ui-monospace, monospace`
     g.textAlign = 'left'
-    g.fillText(label, x + 3, 10)
+    g.textBaseline = 'middle'
+    g.fillText(text, x0 + 8 * dpr, ty + tagH / 2 + 0.5 * dpr)
+    g.textBaseline = 'alphabetic'
   }
 }

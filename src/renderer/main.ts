@@ -1,7 +1,7 @@
 import './style.css'
 import { DJEngine } from './engine/engine'
 import { computeBeatGrid } from './engine/analysis'
-import { WaveformView } from './engine/waveform'
+import { WaveformView, camelotColor, type WaveformMode } from './engine/waveform'
 import { SyncController } from './engine/sync'
 import { STEM_ORDER, type Deck, type Track } from './engine/deck'
 import { CrateStore } from './crate/store'
@@ -50,6 +50,8 @@ function stopRecording(reason?: string): void {
 }
 
 const waveforms = new Map<string, WaveformView>()
+/** remembered pre-mute gain per deck + stem index for click-to-mute/solo */
+const stemSavedGain: Record<'A' | 'B', number[]> = { A: [1, 1, 1, 1], B: [1, 1, 1, 1] }
 
 let focusedDeck: 'A' | 'B' = 'A'
 let userDataDir = ''
@@ -183,8 +185,12 @@ async function enhanceWithSidecar(track: Track): Promise<void> {
     stems?: Record<string, string>
     stems_error?: string
   }
-  if (typeof res.bpm === 'number' && res.bpm > 0) {
-    track.grid = { bpm: res.bpm, offset: res.offset ?? track.grid?.offset ?? 0 }
+  if (typeof res.bpm === 'number' && res.bpm > 0 && track.analysisSource !== 'manual') {
+    track.grid = {
+      ...(track.grid ?? {}),
+      bpm: res.bpm,
+      offset: res.offset ?? track.grid?.offset ?? 0
+    }
     track.analysisSource = 'sidecar'
   }
   if (res.key) {
@@ -205,6 +211,12 @@ async function enhanceWithSidecar(track: Track): Promise<void> {
   } else if (res.stems_error) {
     log(`stems skipped: ${res.stems_error}`)
   }
+  for (const d of [engine.deckA, engine.deckB]) {
+    if (d.track?.id === track.id) {
+      updateDeckMeta(d)
+      wfFor(d).markDirty()
+    }
+  }
   crate.upsert(track)
   renderCrate()
   log(`analyzed "${track.name}" in ${((performance.now() - started) / 1000).toFixed(1)}s${track.key ? ` — ${track.key}` : ''}`)
@@ -215,8 +227,11 @@ async function attachStems(deck: Deck, track: Track): Promise<void> {
     const bufs = await loadStemBuffers(track)
     if (deck.track?.id !== track.id) return
     deck.setStemBuffers(bufs)
+    wfFor(deck).setStems(bufs)
     deck.releaseMainMix() // stems replace the mix: free ~106 MB per 5-min track
+    stemSavedGain[deck.id] = [1, 1, 1, 1]
     updateStemsUI(deck)
+    syncWaveformModeButtons(deck)
     audioMem.track(track.id, track.name, AudioMemory.bytesOf(...bufs))
   } catch (e) {
     log(`stem load failed: ${String(e)}`)
@@ -272,7 +287,16 @@ async function loadTrackIntoDeck(track: Track, buffer?: AudioBuffer): Promise<vo
     }
     const stemBufs = track.stems ? await loadStemBuffers(track) : []
     await deck.load(track, buf, stemBufs)
-    audioMem.track(track.id, track.name, AudioMemory.bytesOf(buf, ...stemBufs))
+    const wf = wfFor(deck)
+    wf.setBuffer(buf)
+    if (stemBufs.length === 4) {
+      wf.setStems(stemBufs)
+      deck.releaseMainMix() // peaks are captured; stems handle playback
+      audioMem.track(track.id, track.name, AudioMemory.bytesOf(...stemBufs))
+    } else {
+      audioMem.track(track.id, track.name, AudioMemory.bytesOf(buf, ...stemBufs))
+    }
+    stemSavedGain[deck.id] = [1, 1, 1, 1]
     focusedDeck = deck.id
     if (track.gainDb == null) {
       track.lufs = computeLoudness(buf)
@@ -290,6 +314,7 @@ async function loadTrackIntoDeck(track: Track, buffer?: AudioBuffer): Promise<vo
     }
     updateDeckUI(deck)
     updateStemsUI(deck)
+    syncWaveformModeButtons(deck)
     log(`loaded "${track.name}" → deck ${deck.id}`)
   } catch (e) {
     log(`could not load "${track.name}": ${String(e)}`)
@@ -330,9 +355,10 @@ function actionPress(action: string): void {
     if (hc) {
       const i = Number(hc[1]) - 1
       if (verb.startsWith('set')) {
-        deck.hotCues[i] = deck.position
+        deck.hotCues[i] = deck.audiblePosition
         persistTrack(deck)
-        log(`deck ${deck.id} hot cue ${i + 1} set @ ${fmtTime(deck.position)}`)
+        wfFor(deck).markDirty()
+        log(`deck ${deck.id} hot cue ${i + 1} set @ ${fmtTime(deck.audiblePosition)}`)
       } else {
         const p = deck.hotCues[i]
         if (p == null) {
@@ -340,6 +366,7 @@ function actionPress(action: string): void {
         } else {
           releaseSyncIfSlave(deck)
           deck.seek(p)
+          wfFor(deck).markDirty()
           if (!deck.playing) deck.play()
         }
       }
@@ -351,6 +378,7 @@ function actionPress(action: string): void {
       const beats = Number(lp[1])
       if (deck.loopLatch) deck.toggleLoop(beats)
       else deck.loopBeats(beats)
+      wfFor(deck).markDirty()
       if (deck.activeLoop && syncCtl.slave === deck.id) {
         syncCtl.disengage()
         log(`deck ${deck.id} sync lock released (loop)`)
@@ -362,14 +390,17 @@ function actionPress(action: string): void {
       case 'play':
         if (deck.playing) deck.pause()
         else deck.play()
+        wfFor(deck).markDirty()
         break
       case 'cue':
         releaseSyncIfSlave(deck)
         deck.cuePress()
+        wfFor(deck).markDirty()
         break
       case 'setCue':
         deck.setCueHere()
         persistTrack(deck)
+        wfFor(deck).markDirty()
         log(`deck ${deck.id} cue set @ ${fmtTime(deck.cuePoint)}`)
         break
       case 'sync': {
@@ -379,6 +410,7 @@ function actionPress(action: string): void {
           log(`deck ${deck.id} sync lock released`)
         } else if (deck.syncTo(other)) {
           syncCtl.engage(deck.id)
+          wfFor(deck).markDirty()
           log(`deck ${deck.id} synced + drift lock ON (${(deck.effectiveBpm ?? 0).toFixed(1)} BPM)`)
         } else {
           log('sync failed — need audio + beatgrids on both decks')
@@ -387,8 +419,75 @@ function actionPress(action: string): void {
       }
       case 'keylock': {
         const ok = deck.setKeylock(!deck.keylock)
-        if (ok) log(`deck ${deck.id} key lock ${deck.keylock ? 'ON' : 'OFF'} (experimental)`)
+        if (ok) log(`deck ${deck.id} key lock ${deck.keylock ? 'ON' : 'OFF'}`)
         else log(`deck ${deck.id} key lock unavailable while stems are loaded`)
+        break
+      }
+      case 'setBar1':
+        if (deck.setDownbeatHere()) {
+          persistTrack(deck)
+          wfFor(deck).markDirty()
+          log(`deck ${deck.id} Bar 1 anchored @ ${fmtTime(deck.audiblePosition)}`)
+        }
+        break
+      case 'beatLeft':
+        if (deck.shiftDownbeat(-1)) {
+          persistTrack(deck)
+          wfFor(deck).markDirty()
+        }
+        break
+      case 'beatRight':
+        if (deck.shiftDownbeat(1)) {
+          persistTrack(deck)
+          wfFor(deck).markDirty()
+        }
+        break
+      case 'nudgeBack':
+        if (deck.nudgeGrid(-0.01)) {
+          persistTrack(deck)
+          wfFor(deck).markDirty()
+        }
+        break
+      case 'nudgeFwd':
+        if (deck.nudgeGrid(0.01)) {
+          persistTrack(deck)
+          wfFor(deck).markDirty()
+        }
+        break
+      case 'bpmHalf': {
+        const next = deck.scaleBpm(0.5)
+        if (next != null) {
+          persistTrack(deck)
+          updateDeckMeta(deck)
+          wfFor(deck).markDirty()
+          renderCrate()
+          log(`deck ${deck.id} BPM halved → ${next.toFixed(1)}`)
+        }
+        break
+      }
+      case 'bpmDouble': {
+        const next = deck.scaleBpm(2)
+        if (next != null) {
+          persistTrack(deck)
+          updateDeckMeta(deck)
+          wfFor(deck).markDirty()
+          renderCrate()
+          log(`deck ${deck.id} BPM doubled → ${next.toFixed(1)}`)
+        }
+        break
+      }
+      case 'beatsPerBar': {
+        const bpb = deck.cycleBeatsPerBar()
+        persistTrack(deck)
+        wfFor(deck).markDirty()
+        log(`deck ${deck.id} measure = ${bpb}/4`)
+        break
+      }
+      case 'phraseBars': {
+        const pb = deck.cyclePhraseBars()
+        persistTrack(deck)
+        wfFor(deck).markDirty()
+        log(`deck ${deck.id} overview phrase grid = ${pb} bars`)
         break
       }
       case 'delay':
@@ -414,14 +513,17 @@ function actionPress(action: string): void {
         break
       case 'loopExit':
         deck.exitLoop()
+        wfFor(deck).markDirty()
         break
       case 'jumpBack':
         releaseSyncIfSlave(deck)
         deck.beatJump(-1)
+        wfFor(deck).markDirty()
         break
       case 'jumpFwd':
         releaseSyncIfSlave(deck)
         deck.beatJump(1)
+        wfFor(deck).markDirty()
         break
       case 'jumpSize': {
         const s = deck.cycleJumpSize()
@@ -497,10 +599,17 @@ function actionRelease(action: string): void {
   const deck = deckOf(action)
   if (deck) {
     const verb = action.slice(6)
-    if (verb === 'cue') deck.cueRelease()
-    else if (verb === 'bendDown' || verb === 'bendUp') deck.bend(0)
-    else if (verb === 'echoOut') deck.fx.echoOutRelease()
-    else if (/^loop[1248]$/.test(verb)) deck.releaseLoop()
+    if (verb === 'cue') {
+      deck.cueRelease()
+      wfFor(deck).markDirty()
+    } else if (verb === 'bendDown' || verb === 'bendUp') {
+      deck.bend(0)
+    } else if (verb === 'echoOut') {
+      deck.fx.echoOutRelease()
+    } else if (/^loop[1248]$/.test(verb)) {
+      deck.releaseLoop()
+      wfFor(deck).markDirty()
+    }
     return
   }
 }
@@ -553,7 +662,14 @@ const HOTCUE_KEYS: Record<string, ['A' | 'B', number]> = {
   Semicolon: ['B', 4]
 }
 
+function isTypingTarget(t: EventTarget | null): boolean {
+  if (t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return true
+  if (t instanceof HTMLInputElement && t.type !== 'range') return true
+  return false
+}
+
 document.addEventListener('keydown', (e) => {
+  if (isTypingTarget(e.target)) return
   // beat jump on the focused deck: [ back, ] forward, \ cycles size
   if (e.code === 'BracketLeft' || e.code === 'BracketRight' || e.code === 'Backslash') {
     e.preventDefault()
@@ -564,6 +680,7 @@ document.addEventListener('keydown', (e) => {
       log(`deck ${deck.id} jump size = ${s} beat${s > 1 ? 's' : ''}`)
     } else {
       deck.beatJump(e.code === 'BracketLeft' ? -1 : 1)
+      wfFor(deck).markDirty()
     }
     return
   }
@@ -588,6 +705,7 @@ document.addEventListener('keydown', (e) => {
   actionPress(a)
 })
 document.addEventListener('keyup', (e) => {
+  if (isTypingTarget(e.target)) return
   const a = KEY_ACTIONS[e.code]
   if (!a) return
   actionRelease(a)
@@ -651,6 +769,24 @@ function fmtTime(sec: number): string {
   return `${m}:${s.toFixed(1).padStart(4, '0')}`
 }
 
+function fmtShortTime(sec: number): string {
+  if (!isFinite(sec) || sec < 0) sec = 0
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec - m * 60)
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function barLabelAt(deck: Deck, sec: number): string {
+  const g = deck.track?.grid
+  if (g && g.bpm > 0) {
+    const bpb = g.beatsPerBar ?? 4
+    const idx = Math.floor((sec - g.offset) / (60 / g.bpm) + 1e-4)
+    const bar = idx >= 0 ? Math.floor(idx / bpb) + 1 : Math.floor(idx / bpb)
+    return `B${bar}`
+  }
+  return fmtShortTime(sec)
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!
@@ -665,30 +801,147 @@ function wfFor(deck: Deck): WaveformView {
   return waveforms.get(deck.id)!
 }
 
+function syncWaveformModeButtons(deck: Deck): void {
+  const r = deckRefs(deck)
+  const wf = wfFor(deck)
+  const hasStems = wf.hasStems
+  r.wfStemsBtn.disabled = !hasStems
+  r.wfStemsBtn.title = hasStems
+    ? 'Separated Drums / Bass / Other / Vocals stem lanes'
+    : 'Stems not yet separated for this track'
+  r.wfRgbBtn.classList.toggle('active', wf.mode === 'rgb')
+  r.wfBandsBtn.classList.toggle('active', wf.mode === 'bands')
+  r.wfStemsBtn.classList.toggle('active', wf.mode === 'stems' && hasStems)
+}
+
+function applyStemGainUI(deck: Deck, i: number, v: number): void {
+  const r = deckRefs(deck)
+  deck.setStemGain(i, v)
+  r.stemSliders[i].value = String(v)
+  r.stemMuteBtns[i].classList.toggle('muted', v < 0.02)
+  wfFor(deck).markDirty()
+}
+
+function updateFilterLabel(r: DeckRefs, v: number): void {
+  const lab = r.filter.closest('.flt-lab')
+  if (!lab) return
+  lab.classList.toggle('lp', v < -0.04)
+  lab.classList.toggle('hp', v > 0.04)
+}
+
+function updateDeckMeta(deck: Deck): void {
+  const r = deckRefs(deck)
+  const t = deck.track
+  r.name.textContent = t?.name ?? '— empty deck —'
+  const orig = t?.grid?.bpm
+  r.origBpm.textContent = orig && orig > 0 ? `ORIG ${orig.toFixed(1)}` : 'ORIG –.–'
+
+  const cam = t?.camelot ?? ''
+  const col = camelotColor(cam)
+  r.keyCamelot.textContent = cam || '—'
+  r.keyCamelot.classList.toggle('has-key', !!col)
+  r.keyCamelot.style.backgroundColor = col ?? ''
+  r.keyName.textContent = t?.key ?? (t ? 'unanalyzed' : '—')
+
+  const hasStems = deck.stemCount > 0
+  r.keylockBtn.disabled = hasStems
+  r.keylockBtn.title = hasStems
+    ? 'Key lock unavailable while stems are loaded'
+    : 'Lock musical key while changing tempo (Signalsmith Stretch)'
+}
+
 function wireDeck(deck: Deck, r: DeckRefs): void {
-  const wf = new WaveformView(r.waveform)
+  const wf = new WaveformView(r.overview, r.waveform)
   wf.onSeek = (t) => {
     releaseSyncIfSlave(deck)
     deck.seek(t)
+    wf.markDirty()
   }
+  wf.onModeChange = () => syncWaveformModeButtons(deck)
   waveforms.set(deck.id, wf)
 
   r.root.addEventListener('pointerdown', () => {
     focusedDeck = deck.id
   })
+
+  const resetRate = () => {
+    releaseSyncIfSlave(deck)
+    deck.setTempoRate(1)
+    r.rate.value = '0'
+    r.rateVal.textContent = '+0.00%'
+  }
   r.rate.oninput = () => {
     releaseSyncIfSlave(deck)
     deck.setTempoRate(1 + r.rate.valueAsNumber / 100)
     r.rateVal.textContent = pct(deck.tempoRate)
   }
+  r.rate.ondblclick = resetRate
+  r.rateResetBtn.addEventListener('click', resetRate)
+  r.pitchBadge.addEventListener('click', resetRate)
+
+  const modePairs: [HTMLButtonElement, WaveformMode][] = [
+    [r.wfRgbBtn, 'rgb'],
+    [r.wfBandsBtn, 'bands'],
+    [r.wfStemsBtn, 'stems']
+  ]
+  for (const [btn, mode] of modePairs) {
+    btn.addEventListener('click', () => wf.setMode(mode))
+  }
+  r.zoomOutBtn.addEventListener('click', () => wf.setZoom(wf.zoomSec * 1.4))
+  r.zoomInBtn.addEventListener('click', () => wf.setZoom(wf.zoomSec * 0.72))
+
   const eqs = [r.eqLow, r.eqMid, r.eqHigh]
   const applyEq = () => deck.setEQ(eqs[0].valueAsNumber, eqs[1].valueAsNumber, eqs[2].valueAsNumber)
-  eqs.forEach((e) => (e.oninput = applyEq))
-  r.stemSliders.forEach((s, i) => (s.oninput = () => deck.setStemGain(i, s.valueAsNumber)))
-  r.filter.oninput = () => deck.setFilter(r.filter.valueAsNumber)
+  eqs.forEach((e) => {
+    e.oninput = applyEq
+    e.ondblclick = () => {
+      e.value = '0'
+      applyEq()
+    }
+  })
+
+  r.stemSliders.forEach((s, i) => {
+    s.oninput = () => {
+      const v = s.valueAsNumber
+      if (v >= 0.02) stemSavedGain[deck.id][i] = v
+      applyStemGainUI(deck, i, v)
+    }
+  })
+  r.stemMuteBtns.forEach((btn, i) => {
+    btn.addEventListener('click', (e) => {
+      const saved = stemSavedGain[deck.id]
+      if (e.shiftKey) {
+        // solo toggle: if already soloed, restore all; else mute others
+        const othersMuted = [0, 1, 2, 3].every((k) => k === i || deck.getStemGain(k) < 0.02)
+        for (let k = 0; k < 4; k++) {
+          if (othersMuted) {
+            applyStemGainUI(deck, k, saved[k] > 0.05 ? saved[k] : 1)
+          } else {
+            const cur = deck.getStemGain(k)
+            if (cur >= 0.02) saved[k] = cur
+            applyStemGainUI(deck, k, k === i ? (saved[i] > 0.05 ? saved[i] : 1) : 0)
+          }
+        }
+      } else {
+        const cur = deck.getStemGain(i)
+        if (cur >= 0.02) {
+          saved[i] = cur
+          applyStemGainUI(deck, i, 0)
+        } else {
+          applyStemGainUI(deck, i, saved[i] > 0.05 ? saved[i] : 1)
+        }
+      }
+    })
+  })
+
+  r.filter.oninput = () => {
+    deck.setFilter(r.filter.valueAsNumber)
+    updateFilterLabel(r, r.filter.valueAsNumber)
+  }
   r.filter.ondblclick = () => {
     r.filter.value = '0'
     deck.setFilter(0)
+    updateFilterLabel(r, 0)
   }
   r.wet.oninput = () => deck.fx.setWet(r.wet.valueAsNumber)
   r.fb.oninput = () => deck.fx.setFb(r.fb.valueAsNumber)
@@ -701,12 +954,14 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
       else if (e.altKey) {
         deck.hotCues[i] = null
         persistTrack(deck)
+        wf.markDirty()
         log(`deck ${deck.id} hot cue ${i + 1} cleared`)
       } else actionPress(`deck${deck.id}.hotcue${i + 1}`)
     })
   })
 
   for (const btn of r.root.querySelectorAll<HTMLButtonElement>('button[data-act]')) {
+    if (btn.classList.contains('hc')) continue // handled with shift/alt modifiers above
     const act = btn.dataset.act!
     btn.addEventListener('pointerdown', () => actionPress(act))
     btn.addEventListener('pointerup', () => actionRelease(act))
@@ -716,9 +971,7 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
 
 function updateDeckUI(deck: Deck): void {
   const r = deckRefs(deck)
-  r.name.textContent = deck.track?.name ?? '— empty —'
-  // after stems attach, the deck drops its main-mix buffer — keep the rendered peaks
-  if (deck.audioBuffer) wfFor(deck).setBuffer(deck.audioBuffer)
+  updateDeckMeta(deck)
   if (document.activeElement !== r.rate) {
     r.rate.value = String(((deck.tempoRate - 1) * 100).toFixed(2))
     r.rateVal.textContent = pct(deck.tempoRate)
@@ -729,6 +982,8 @@ function updateStemsUI(deck: Deck): void {
   const r = deckRefs(deck)
   r.stemsBox.hidden = deck.stemCount === 0
   r.stemSliders.forEach((s) => (s.value = '1'))
+  r.stemMuteBtns.forEach((b) => b.classList.remove('muted'))
+  updateDeckMeta(deck)
 }
 
 function camelotOrder(c?: string): number {
@@ -765,18 +1020,18 @@ function renderCrate(): void {
   refs.crateCount.textContent = tracks.length ? `(${tracks.length})` : ''
   for (const t of tracks) {
     const li = document.createElement('li')
-    const meta = [
-      t.source === 'soundcloud' ? 'SC' : '',
-      t.grid?.bpm ? t.grid.bpm.toFixed(1) : '?',
-      t.camelot ?? '',
-      t.stems ? 'stems' : '',
-      t.hotCues?.some((h) => h != null) ? 'cues' : ''
-    ]
-      .filter(Boolean)
-      .join(' · ')
-    li.innerHTML = `<span class="crate-name">${escapeHtml(t.name)}</span><span class="crate-meta">${escapeHtml(meta)}</span>`
+    const parts: string[] = []
+    if (t.source === 'soundcloud') parts.push('<span class="crate-tag sc">SC</span>')
+    if (t.grid?.bpm) parts.push(`<span>${t.grid.bpm.toFixed(1)}</span>`)
+    if (t.camelot) {
+      const col = camelotColor(t.camelot) ?? '#94a3b8'
+      parts.push(`<span class="crate-key" style="background:${col}">${escapeHtml(t.camelot)}</span>`)
+    }
+    if (t.stems) parts.push('<span class="crate-tag">stems</span>')
+    if (t.hotCues?.some((h) => h != null)) parts.push('<span class="crate-tag cues">cues</span>')
+    li.innerHTML = `<span class="crate-name">${escapeHtml(t.name)}</span><span class="crate-meta">${parts.join('')}</span>`
     const mb = t.pcmBytes ? `${(t.pcmBytes / (1024 * 1024)).toFixed(0)}MB` : ''
-    li.title = `${fmtTime(t.durationSec)}${mb ? ` · ${mb} PCM` : ''}${t.sourceUrl ? ` · ${t.sourceUrl}` : ''}`
+    li.title = `${fmtTime(t.durationSec)}${t.key ? ` · ${t.key}` : ''}${mb ? ` · ${mb} PCM` : ''}${t.sourceUrl ? ` · ${t.sourceUrl}` : ''}`
     li.addEventListener('click', () => void loadTrackIntoDeck(t))
     refs.crateList.append(li)
   }
@@ -879,11 +1134,9 @@ let lastSyncUpdate = 0
 let lastFxBpmUpdate = 0
 let lastMemUpdate = 0
 let lastMemEnforce = 0
-let lastIdleDraw = 0
 
 function tick(): void {
   const now = performance.now()
-  const anyPlaying = engine.deckA.playing || engine.deckB.playing
   if (now - lastSyncUpdate > 200) {
     lastSyncUpdate = now
     syncCtl.update()
@@ -909,6 +1162,7 @@ function tick(): void {
   if (updateFxBpm) lastFxBpmUpdate = now
   for (const deck of [engine.deckA, engine.deckB]) {
     const r = deckRefs(deck)
+    const wf = wfFor(deck)
     r.playBtn.classList.toggle('active', deck.playing)
     r.syncBtn.classList.toggle('active', syncCtl.slave === deck.id)
     r.keylockBtn.classList.toggle('active', deck.keylock)
@@ -919,6 +1173,12 @@ function tick(): void {
     r.fracBtn.textContent = delayFracLabel(deck.fx.delayFrac)
     r.loopLatchBtn.classList.toggle('active', deck.loopLatch)
     r.jumpSizeBtn.textContent = String(deck.jumpBeats)
+    const bpb = deck.track?.grid?.beatsPerBar ?? 4
+    const pb = deck.track?.grid?.phraseBars ?? 8
+    r.bpbBtn.textContent = `${bpb}/4`
+    r.phraseBtn.textContent = `${pb}B`
+    r.zoomVal.textContent = `${Math.round(wf.zoomSec)}s`
+
     const LOOP_SIZES = [1, 2, 4, 8]
     for (let i = 0; i < r.loopBtns.length; i++) {
       r.loopBtns[i].classList.toggle('active', !!deck.activeLoop && deck.activeLoop.beats === LOOP_SIZES[i])
@@ -927,17 +1187,31 @@ function tick(): void {
     if (updateFxBpm && (deck.fx.delayOn || deck.fx.echoActive)) {
       deck.fx.setBpm(deck.effectiveBpm ?? deck.track?.grid?.bpm ?? 0)
     }
+
     const bpm = deck.effectiveBpm
     r.bpm.textContent = bpm ? bpm.toFixed(1) : '–.–'
-    r.key.textContent = deck.track?.camelot ?? deck.track?.key ?? ''
-    r.pos.textContent = fmtTime(deck.position)
+    const rateTxt = pct(deck.tempoRate)
+    r.pitchBadge.textContent = rateTxt
+    r.pitchBadge.classList.toggle('shifted', Math.abs(deck.tempoRate - 1) > 0.0005)
+
+    const bb = deck.barBeat
+    r.barBeat.textContent = bb ? `BAR ${bb.bar}.${bb.beat}` : '—'
+    const pos = deck.audiblePosition
+    r.pos.textContent = fmtTime(pos)
+    r.rem.textContent = `-${fmtTime(Math.max(0, deck.duration - pos))}`
     r.root.classList.toggle('focused', deck.id === focusedDeck)
+
     if (document.activeElement !== r.rate) {
       r.rate.value = String(((deck.tempoRate - 1) * 100).toFixed(2))
-      r.rateVal.textContent = pct(deck.tempoRate)
+      r.rateVal.textContent = rateTxt
     }
     for (let i = 0; i < r.hotcueBtns.length; i++) {
-      r.hotcueBtns[i].classList.toggle('set', deck.hotCues[i] != null)
+      const btn = r.hotcueBtns[i]
+      const hc = deck.hotCues[i]
+      btn.classList.toggle('set', hc != null)
+      const timeEl = btn.querySelector('.hc-time')
+      if (timeEl) timeEl.textContent = hc != null ? barLabelAt(deck, hc) : '—'
+      btn.title = hc != null ? `Hot Cue ${i + 1} @ ${fmtTime(hc)} (${barLabelAt(deck, hc)}) · ⇧set · ⌥clear` : `Hot Cue ${i + 1} empty · ⇧click to set`
     }
     const eq = deck.eqDb
     const eqSliders: [HTMLInputElement, number][] = [
@@ -950,18 +1224,17 @@ function tick(): void {
         slider.value = String(db.toFixed(1))
       }
     }
-    if (deck.playing || now - lastIdleDraw > 500) wfFor(deck).draw(deck)
+    if (deck.playing || wf.dirty) wf.draw(deck)
   }
   if (document.activeElement !== refs.xfader) {
     refs.xfader.value = String(engine.mixer.position)
   }
-  if (!anyPlaying && now - lastIdleDraw > 500) lastIdleDraw = now
   refs.splitCueBtn.classList.toggle('active', engine.splitCue)
   refs.autoGainBtn.classList.toggle('active', autoGain)
   refs.recBtn.classList.toggle('active', recorder.recording)
   refs.recBtn.textContent = recorder.recording
-    ? `${Math.floor(recorder.elapsed / 60)}:${String(Math.floor(recorder.elapsed % 60)).padStart(2, '0')}`
-    : 'REC'
+    ? `● ${Math.floor(recorder.elapsed / 60)}:${String(Math.floor(recorder.elapsed % 60)).padStart(2, '0')}`
+    : '● REC'
   requestAnimationFrame(tick)
 }
 
@@ -979,6 +1252,7 @@ const ACTION_IDS = [
   'deckA.tempo', 'deckA.eqLow', 'deckA.eqMid', 'deckA.eqHigh',
   'deckA.loop1', 'deckA.loop2', 'deckA.loop4', 'deckA.loop8', 'deckA.loopLatch', 'deckA.loopExit',
   'deckA.jumpBack', 'deckA.jumpFwd', 'deckA.jumpSize',
+  'deckA.setBar1', 'deckA.beatLeft', 'deckA.beatRight', 'deckA.bpmHalf', 'deckA.bpmDouble',
   'deckB.play', 'deckB.cue', 'deckB.setCue', 'deckB.sync', 'deckB.keylock',
   'deckB.bendDown', 'deckB.bendUp', 'deckB.cueMix',
   'deckB.hotcue1', 'deckB.hotcue2', 'deckB.hotcue3', 'deckB.hotcue4',
@@ -988,6 +1262,7 @@ const ACTION_IDS = [
   'deckB.tempo', 'deckB.eqLow', 'deckB.eqMid', 'deckB.eqHigh',
   'deckB.loop1', 'deckB.loop2', 'deckB.loop4', 'deckB.loop8', 'deckB.loopLatch', 'deckB.loopExit',
   'deckB.jumpBack', 'deckB.jumpFwd', 'deckB.jumpSize',
+  'deckB.setBar1', 'deckB.beatLeft', 'deckB.beatRight', 'deckB.bpmHalf', 'deckB.bpmDouble',
   'sampler.pad1', 'sampler.pad2', 'sampler.pad3', 'sampler.pad4',
   'sampler.pad5', 'sampler.pad6', 'sampler.pad7', 'sampler.pad8', 'sampler.volume',
   'mix.crossLeft', 'mix.crossRight', 'mix.crossCenter', 'mix.crossfade', 'mix.splitCue', 'mix.autoGain',
@@ -1069,7 +1344,11 @@ midi.onAction = (actionId, msg) => {
     const deck = deckOf(actionId)
     if (deck) {
       if (actionId.endsWith('.filter')) {
-        deck.setFilter((msg.value - 64) / 63)
+        const v = (msg.value - 64) / 63
+        deck.setFilter(v)
+        const r = deckRefs(deck)
+        if (document.activeElement !== r.filter) r.filter.value = String(v.toFixed(2))
+        updateFilterLabel(r, v)
         return
       }
       if (actionId.endsWith('.volume')) {

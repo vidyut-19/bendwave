@@ -47,10 +47,11 @@ export class SyncController {
     slave.setTempoRate(masterEff / sg.bpm)
 
     // 2. phase lock: small proportional correction toward the master's phase
+    // Both position and offset live in track time, so beat duration is 60/bpm.
     const sBeat = 60 / sg.bpm
-    const mBeat = 60 / masterEff
-    const sPhase = ((((slave.position + sg.offset) / sBeat) % 1) + 1) % 1
-    const mPhase = ((((master.position + mg.offset) / mBeat) % 1) + 1) % 1
+    const mBeat = 60 / mg.bpm
+    const sPhase = ((((slave.position - sg.offset) / sBeat) % 1) + 1) % 1
+    const mPhase = ((((master.position - mg.offset) / mBeat) % 1) + 1) % 1
     let err = sPhase - mPhase
     if (err > 0.5) err -= 1
     if (err < -0.5) err += 1
