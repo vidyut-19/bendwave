@@ -1,5 +1,6 @@
 import { createKL, type KLEngine } from './keylock'
 import { FXUnit } from './fx'
+import type { TrackSection, TrackVibe } from './structure'
 
 export interface BeatGrid {
   /** beats per minute */
@@ -44,6 +45,10 @@ export interface Track {
   /** measured loudness (LUFS-approximate) and recommended trim for auto-gain */
   lufs?: number
   gainDb?: number
+  /** auto-detected bar-aligned song structure (INTRO, BUILD, DROP, BREAK, OUTRO) */
+  sections?: TrackSection[]
+  /** compact energy/bass/brightness/dynamics fingerprint for Next-Up curation */
+  vibe?: TrackVibe
   analyzedAt?: string
   analysisSource?: 'browser' | 'sidecar' | 'manual'
 }
@@ -183,6 +188,29 @@ export class Deck {
     const beat = (((beatIdx % bpb) + bpb) % bpb) + 1
     const totalBars = Math.max(1, Math.ceil((this.duration - grid.offset) / (beatDur * bpb)))
     return { bar, beat, beatsPerBar: bpb, totalBars }
+  }
+
+  /** live section + countdown in bars.beats to the next arrangement boundary */
+  get sectionCountdown(): {
+    current: TrackSection
+    next: TrackSection | null
+    barsLeft: number
+    beatsLeft: number
+  } | null {
+    const secs = this.track?.sections
+    const grid = this.track?.grid
+    if (!secs?.length || !grid || grid.bpm <= 0 || !this.hasAudio) return null
+    const pos = this.audiblePosition
+    let idx = secs.findIndex((s) => pos >= s.tStart - 0.05 && pos < s.tEnd)
+    if (idx === -1) idx = pos < secs[0].tStart ? 0 : secs.length - 1
+    const current = secs[idx]
+    const next = idx + 1 < secs.length ? secs[idx + 1] : null
+    const bpb = grid.beatsPerBar ?? 4
+    const beatDur = 60 / grid.bpm
+    const remBeats = Math.max(0, Math.ceil((current.tEnd - pos) / beatDur))
+    const barsLeft = Math.floor(remBeats / bpb)
+    const beatsLeft = remBeats % bpb
+    return { current, next, barsLeft, beatsLeft }
   }
 
   setEQ(lowDb: number, midDb: number, highDb: number): void {

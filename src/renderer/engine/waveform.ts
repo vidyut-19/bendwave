@@ -1,4 +1,5 @@
 import type { Deck } from './deck'
+import { SECTION_COLORS, type TrackSection } from './structure'
 
 export const HC_COLORS = ['#f43f5e', '#f59e0b', '#10b981', '#3b82f6'] as const
 export const CUE_COLOR = '#fbbf24'
@@ -40,17 +41,19 @@ export function camelotColor(code?: string): string | null {
 
 export type WaveformMode = 'rgb' | 'bands' | 'stems'
 
-const PLAYHEAD_FRAC = 0.25 // playhead sits 25% from the left in close-up view
-const PEAK_BUCKET = 512 // samples per base bucket
+const PLAYHEAD_FRAC = 0.25
+const PEAK_BUCKET = 512
 
 interface PeakPyramid {
-  levels: Float32Array[]
+  peaks: Float32Array[]
+  rms: Float32Array[]
   pps: number
   duration: number
 }
 
 interface FreqPyramid {
-  amp: Float32Array[]
+  peak: Float32Array[]
+  rms: Float32Array[]
   lo: Float32Array[]
   mid: Float32Array[]
   hi: Float32Array[]
@@ -58,18 +61,23 @@ interface FreqPyramid {
   duration: number
 }
 
-function buildMipLevels(base: Float32Array): Float32Array[] {
+function buildMipLevels(base: Float32Array, mode: 'max' | 'avg' = 'max'): Float32Array[] {
   const levels: Float32Array[] = [base]
   while (levels[levels.length - 1].length > 256) {
     const prev = levels[levels.length - 1]
     const next = new Float32Array(Math.ceil(prev.length / 4))
     for (let i = 0; i < next.length; i++) {
-      let m = 0
-      const en = Math.min(prev.length, (i + 1) * 4)
-      for (let j = i * 4; j < en; j++) {
-        if (prev[j] > m) m = prev[j]
+      const st = i * 4
+      const en = Math.min(prev.length, st + 4)
+      if (mode === 'avg') {
+        let acc = 0
+        for (let j = st; j < en; j++) acc += prev[j]
+        next[i] = acc / Math.max(1, en - st)
+      } else {
+        let m = 0
+        for (let j = st; j < en; j++) if (prev[j] > m) m = prev[j]
+        next[i] = m
       }
-      next[i] = m
     }
     levels.push(next)
   }
@@ -80,37 +88,44 @@ function buildPeakPyramid(buffer: AudioBuffer): PeakPyramid {
   const n = buffer.length
   const buckets = Math.ceil(n / PEAK_BUCKET)
   const peaks = new Float32Array(buckets)
-  const chs: Float32Array[] = []
-  for (let c = 0; c < Math.min(2, buffer.numberOfChannels); c++) chs.push(buffer.getChannelData(c))
+  const rmsArr = new Float32Array(buckets)
+  const ch0 = buffer.getChannelData(0)
+  const ch1 = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : null
+
   for (let b = 0; b < buckets; b++) {
     let m = 0
+    let acc = 0
     const st = b * PEAK_BUCKET
     const en = Math.min(n, st + PEAK_BUCKET)
+    const len = Math.max(1, en - st)
     for (let i = st; i < en; i++) {
-      for (const d of chs) {
-        const v = Math.abs(d[i])
-        if (v > m) m = v
-      }
+      const v = ch1 ? 0.5 * (ch0[i] + ch1[i]) : ch0[i]
+      const av = v < 0 ? -v : v
+      if (av > m) m = av
+      acc += v * v
     }
-    peaks[b] = m
+    peaks[b] = Math.min(1, m)
+    rmsArr[b] = Math.min(1, Math.sqrt(acc / len) * 1.45)
   }
   return {
-    levels: buildMipLevels(peaks),
+    peaks: buildMipLevels(peaks, 'max'),
+    rms: buildMipLevels(rmsArr, 'avg'),
     pps: buffer.sampleRate / PEAK_BUCKET,
     duration: buffer.duration
   }
 }
 
 /**
- * Single-pass 3-band spectral peak extractor (low <250Hz, mid 250–3.2kHz,
- * high >3.2kHz) using two 1-pole IIR filters at 2× stride (~15ms per 5-min
- * track). Powers both the Serato-style RGB waveform and the 3-band lane view.
+ * Single-pass 3-band spectral extractor (low <250Hz, mid 250-3.2kHz, high >3.2kHz)
+ * with clamped peaks (prevents hot MP3 >1.0 intersample clipping) AND RMS body
+ * levels so intros/breakdowns vs drops stand out cleanly visually.
  */
 function buildFreqPyramid(buffer: AudioBuffer): FreqPyramid {
   const n = buffer.length
   const sr = buffer.sampleRate
   const buckets = Math.ceil(n / PEAK_BUCKET)
-  const amp = new Float32Array(buckets)
+  const peak = new Float32Array(buckets)
+  const rms = new Float32Array(buckets)
   const lo = new Float32Array(buckets)
   const mid = new Float32Array(buckets)
   const hi = new Float32Array(buckets)
@@ -129,35 +144,41 @@ function buildFreqPyramid(buffer: AudioBuffer): FreqPyramid {
     const st = b * PEAK_BUCKET
     const en = Math.min(n, st + PEAK_BUCKET)
     let mAmp = 0
-    let mLo = 0
-    let mMid = 0
-    let mHi = 0
+    let sAmp = 0
+    let sLo = 0
+    let sMid = 0
+    let sHi = 0
+    let cnt = 0
     for (let i = st; i < en; i += stride) {
       const x = ch1 ? 0.5 * (ch0[i] + ch1[i]) : ch0[i]
       const ax = x < 0 ? -x : x
       if (ax > mAmp) mAmp = ax
       lpLo += aLo * (x - lpLo)
       lpHi += aHi * (x - lpHi)
-      const vLo = lpLo < 0 ? -lpLo : lpLo
+      const vLo = lpLo
       const vMid = lpHi - lpLo
-      const aMid = vMid < 0 ? -vMid : vMid
       const vHi = x - lpHi
-      const aH = vHi < 0 ? -vHi : vHi
-      if (vLo > mLo) mLo = vLo
-      if (aMid > mMid) mMid = aMid
-      if (aH > mHi) mHi = aH
+      sAmp += x * x
+      sLo += vLo * vLo
+      sMid += vMid * vMid
+      sHi += vHi * vHi
+      cnt++
     }
-    amp[b] = mAmp
-    lo[b] = Math.min(1, mLo * 1.15)
-    mid[b] = Math.min(1, mMid * 1.35)
-    hi[b] = Math.min(1, mHi * 1.9)
+    const inv = 1 / Math.max(1, cnt)
+    peak[b] = Math.min(1, mAmp)
+    rms[b] = Math.min(1, Math.sqrt(sAmp * inv) * 1.55)
+    // RMS-weighted bands (no single-sample spike flattening!)
+    lo[b] = Math.min(1, Math.sqrt(sLo * inv) * 2.1)
+    mid[b] = Math.min(1, Math.sqrt(sMid * inv) * 2.5)
+    hi[b] = Math.min(1, Math.sqrt(sHi * inv) * 4.2)
   }
 
   return {
-    amp: buildMipLevels(amp),
-    lo: buildMipLevels(lo),
-    mid: buildMipLevels(mid),
-    hi: buildMipLevels(hi),
+    peak: buildMipLevels(peak, 'max'),
+    rms: buildMipLevels(rms, 'avg'),
+    lo: buildMipLevels(lo, 'avg'),
+    mid: buildMipLevels(mid, 'avg'),
+    hi: buildMipLevels(hi, 'avg'),
     pps: sr / PEAK_BUCKET,
     duration: buffer.duration
   }
@@ -170,23 +191,26 @@ function pickMip(levels: Float32Array[], basePps: number, secPerPx: number): { a
   return { arr: levels[idx], pps: basePps / Math.pow(4, idx), idx }
 }
 
-function sampleMax(arr: Float32Array, pps: number, ta: number, tb: number): number {
+function sampleRange(arr: Float32Array, pps: number, ta: number, tb: number, mode: 'max' | 'avg' = 'max'): number {
   const len = arr.length
   if (tb < 0 || ta > len / pps) return 0
   const i0 = Math.max(0, Math.floor(ta * pps))
   const i1 = Math.min(len, Math.ceil(tb * pps))
-  let m = 0
-  for (let i = i0; i < i1; i++) {
-    if (arr[i] > m) m = arr[i]
+  if (i1 <= i0) return 0
+  if (mode === 'avg') {
+    let acc = 0
+    for (let i = i0; i < i1; i++) acc += arr[i]
+    return acc / (i1 - i0)
   }
+  let m = 0
+  for (let i = i0; i < i1; i++) if (arr[i] > m) m = arr[i]
   return m
 }
 
-/** Blend Low (rose/red) + Mid (amber/emerald) + High (cyan/blue) into vivid RGB */
 function freqRgb(lo: number, mid: number, hi: number): [number, number, number] {
-  const wLo = lo * 1.15
+  const wLo = lo * 1.2
   const wMid = mid * 1.3
-  const wHi = hi * 1.75
+  const wHi = hi * 1.65
   const sum = wLo + wMid + wHi + 1e-6
   const r = (wLo * 248 + wMid * 68 + wHi * 56) / sum
   const g = (wLo * 66 + wMid * 212 + wHi * 195) / sum
@@ -212,13 +236,22 @@ function barBeatAt(deck: Deck, sec: number): { bar: number; beat: number } | nul
   return { bar, beat }
 }
 
+function sectionAt(sections: TrackSection[] | undefined, sec: number): TrackSection | null {
+  if (!sections?.length) return null
+  for (const s of sections) {
+    if (sec >= s.tStart - 0.05 && sec < s.tEnd) return s
+  }
+  return null
+}
+
 /**
  * Dual-view deck waveform controller:
- *  1. Zoom-out Overview Strip — entire song unsegmented, phrase blocks, bar
- *     numbers, hover intro-length inspector, viewport bracket, click/drag seek.
- *  2. Close-up Scrolling Waveform — supports 4-lane separated Stems view,
- *     3-lane Low/Mid/High view, and Serato-style RGB view, with beatgrid,
- *     downbeat numbers, loop region, and colored cue flags.
+ *  1. Zoom-out Overview Strip — color-coded Arrangement Ribbon (INTRO/BUILD/
+ *     DROP/BREAK/OUTRO), full-track RMS+peak waveform, bar ruler, hover
+ *     inspector, viewport bracket, cue flags, click/drag seek.
+ *  2. Close-up Scrolling Waveform — 4-STEMS / 3-BAND / RGB views with RMS body
+ *     + peak outline, live stem dimming, downbeat bar numbers, section badges,
+ *     loop region, and colored cue flags.
  */
 export class WaveformView {
   private overviewCanvas: HTMLCanvasElement
@@ -231,6 +264,7 @@ export class WaveformView {
   private duration = 0
   private lastT0 = 0
   private hoverOverviewFrac: number | null = null
+  private lastOverviewSections: TrackSection[] = []
 
   mode: WaveformMode = 'rgb'
   zoomSec = 10
@@ -258,22 +292,32 @@ export class WaveformView {
     observe(overviewCanvas)
     observe(detailCanvas)
 
-    // Overview interactions: click/drag to seek anywhere in full track, hover inspects bar/time
-    const seekOverview = (e: PointerEvent) => {
+    // Overview interactions: click ribbon = snap to section start; click/drag body = seek
+    const seekOverview = (e: PointerEvent, allowSectionSnap: boolean) => {
       if (!this.onSeek || this.duration <= 0) return
       const rect = overviewCanvas.getBoundingClientRect()
       const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
-      this.onSeek(frac * this.duration)
+      const relY = e.clientY - rect.top
+      const t = frac * this.duration
+      if (allowSectionSnap && relY <= 17 && this.lastOverviewSections.length > 0) {
+        const sec = sectionAt(this.lastOverviewSections, t)
+        if (sec) {
+          this.onSeek(sec.tStart)
+          this.dirty = true
+          return
+        }
+      }
+      this.onSeek(t)
       this.dirty = true
     }
     overviewCanvas.addEventListener('pointerdown', (e) => {
       overviewCanvas.setPointerCapture(e.pointerId)
-      seekOverview(e)
+      seekOverview(e, true)
     })
     overviewCanvas.addEventListener('pointermove', (e) => {
       const rect = overviewCanvas.getBoundingClientRect()
       this.hoverOverviewFrac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
-      if (e.buttons & 1) seekOverview(e)
+      if (e.buttons & 1) seekOverview(e, false)
       this.dirty = true
     })
     overviewCanvas.addEventListener('pointerleave', () => {
@@ -337,7 +381,6 @@ export class WaveformView {
     }
     this.freq = buildFreqPyramid(buffer)
     this.duration = buffer.duration
-    // Reset stems until setStems() supplies them for this track
     this.stemPyramids = []
     if (this.mode === 'stems') this.mode = 'rgb'
     this.dirty = true
@@ -347,7 +390,7 @@ export class WaveformView {
   setStems(buffers: AudioBuffer[]): void {
     if (buffers.length === 4) {
       this.stemPyramids = buffers.map((b) => buildPeakPyramid(b))
-      this.mode = 'stems' // auto-upgrade to separated 4-stem lanes!
+      this.mode = 'stems'
     } else {
       this.stemPyramids = []
       if (this.mode === 'stems') this.mode = 'rgb'
@@ -363,7 +406,7 @@ export class WaveformView {
   }
 
   // -------------------------------------------------------------------------
-  // 1. Zoom-out Overview Strip (entire track, unsegmented, phrase/bar ruler)
+  // 1. Zoom-out Overview Strip (Arrangement Ribbon + Full-Track Waveform)
   // -------------------------------------------------------------------------
 
   private drawOverview(deck: Deck): void {
@@ -372,27 +415,29 @@ export class WaveformView {
     const w = c.width
     const h = c.height
     const dpr = window.devicePixelRatio || 1
-    const rulerH = Math.round(14 * dpr)
-    const bodyY = rulerH
-    const bodyH = Math.max(1, h - rulerH)
+    const sections = deck.track?.sections ?? []
+    this.lastOverviewSections = sections
+
+    const ribbonH = sections.length > 0 ? Math.round(16 * dpr) : Math.round(13 * dpr)
+    const bodyY = ribbonH
+    const bodyH = Math.max(1, h - ribbonH)
 
     g.fillStyle = '#0c0f14'
     g.fillRect(0, 0, w, h)
 
-    // Ruler strip background
     g.fillStyle = '#11161e'
-    g.fillRect(0, 0, w, rulerH)
+    g.fillRect(0, 0, w, ribbonH)
     g.strokeStyle = 'rgba(255,255,255,0.08)'
     g.beginPath()
-    g.moveTo(0, rulerH + 0.5)
-    g.lineTo(w, rulerH + 0.5)
+    g.moveTo(0, ribbonH + 0.5)
+    g.lineTo(w, ribbonH + 0.5)
     g.stroke()
 
     if (!this.freq || this.duration <= 0) {
       g.fillStyle = '#3a424d'
       g.font = `${10 * dpr}px ui-monospace, monospace`
       g.textAlign = 'center'
-      g.fillText('full-track overview — drop audio to inspect structure & intro', w / 2, bodyY + bodyH / 2 + 3 * dpr)
+      g.fillText('full-track overview & arrangement ribbon — drop audio to analyze', w / 2, bodyY + bodyH / 2 + 3 * dpr)
       return
     }
 
@@ -402,14 +447,51 @@ export class WaveformView {
     const bpb = grid?.beatsPerBar ?? 4
     const phraseBars = grid?.phraseBars ?? 8
 
-    // Alternating phrase blocks + ruler bar numbers
+    // Color-coded Arrangement Ribbon along top edge (click any block to jump!)
+    if (sections.length > 0) {
+      g.font = `700 ${8.5 * dpr}px ui-monospace, monospace`
+      g.textAlign = 'left'
+      g.textBaseline = 'middle'
+      for (const s of sections) {
+        const x0 = Math.max(0, Math.round(s.tStart / secPerPx))
+        const x1 = Math.min(w, Math.round(s.tEnd / secPerPx))
+        const sw = x1 - x0
+        if (sw < 2) continue
+        const pal = SECTION_COLORS[s.label]
+        g.fillStyle = pal.bg
+        g.fillRect(x0, 0, sw, ribbonH)
+        g.fillStyle = pal.border
+        g.fillRect(x0, 0, sw, Math.max(1.5, 2 * dpr))
+        // subtle vertical boundary line through waveform body
+        g.strokeStyle = 'rgba(255,255,255,0.12)'
+        g.beginPath()
+        g.moveTo(x0 + 0.5, 0)
+        g.lineTo(x0 + 0.5, h)
+        g.stroke()
+
+        const bars = Math.max(1, s.barEnd - s.barStart)
+        const vox = s.hasVocals ? ' ♪' : ''
+        const fullTxt = `${s.label} ${bars}B${vox}`
+        const shortTxt = `${s.label.slice(0, 3)} ${bars}B`
+        g.fillStyle = pal.fg
+        if (sw >= g.measureText(fullTxt).width + 6 * dpr) {
+          g.fillText(fullTxt, x0 + 3 * dpr, ribbonH / 2 + 1 * dpr)
+        } else if (sw >= g.measureText(shortTxt).width + 4 * dpr) {
+          g.fillText(shortTxt, x0 + 2 * dpr, ribbonH / 2 + 1 * dpr)
+        } else if (sw >= 18 * dpr) {
+          g.fillText(s.label.slice(0, 3), x0 + 2 * dpr, ribbonH / 2 + 1 * dpr)
+        }
+      }
+      g.textBaseline = 'alphabetic'
+    }
+
+    // Phrase ticks & Bar 1 gold anchor
     if (grid && grid.bpm > 0) {
       const barDur = (60 / grid.bpm) * bpb
       const phraseDur = barDur * phraseBars
       const firstPhrase = Math.floor(-grid.offset / phraseDur) - 1
       const lastPhrase = Math.ceil((dur - grid.offset) / phraseDur) + 1
 
-      // Shading blocks (every other phrase block)
       for (let p = firstPhrase; p <= lastPhrase; p++) {
         const ts = grid.offset + p * phraseDur
         const te = ts + phraseDur
@@ -417,42 +499,39 @@ export class WaveformView {
         const x1 = Math.min(w, Math.round(te / secPerPx))
         if (x1 <= x0) continue
         if (((p % 2) + 2) % 2 === 0) {
-          g.fillStyle = 'rgba(255,255,255,0.032)'
+          g.fillStyle = 'rgba(255,255,255,0.028)'
           g.fillRect(x0, bodyY, x1 - x0, bodyH)
         }
       }
 
-      // Phrase ticks + bar labels (avoid label collisions on very long tracks)
-      const minLabelPx = 28 * dpr
+      const minLabelPx = 30 * dpr
       let stepPhrases = 1
       while ((phraseDur * stepPhrases) / secPerPx < minLabelPx) stepPhrases *= 2
 
-      g.font = `600 ${9 * dpr}px ui-monospace, monospace`
+      g.font = `600 ${8 * dpr}px ui-monospace, monospace`
       g.textAlign = 'left'
-      g.textBaseline = 'middle'
       for (let p = firstPhrase; p <= lastPhrase; p++) {
         const ts = grid.offset + p * phraseDur
         if (ts < -0.001 || ts > dur) continue
         const x = Math.round(ts / secPerPx)
         const isBar1 = p === 0
-        g.strokeStyle = isBar1 ? 'rgba(251,191,36,0.75)' : 'rgba(255,255,255,0.16)'
+        g.strokeStyle = isBar1 ? 'rgba(251,191,36,0.85)' : 'rgba(255,255,255,0.12)'
         g.lineWidth = isBar1 ? Math.max(1.5, dpr) : 1
         g.beginPath()
-        g.moveTo(x + 0.5, isBar1 ? 0 : rulerH)
+        g.moveTo(x + 0.5, bodyY)
         g.lineTo(x + 0.5, h)
         g.stroke()
         g.lineWidth = 1
 
-        if (isBar1 || ((p % stepPhrases) + stepPhrases) % stepPhrases === 0) {
+        if (sections.length === 0 && (isBar1 || ((p % stepPhrases) + stepPhrases) % stepPhrases === 0)) {
           const barNum = p >= 0 ? p * phraseBars + 1 : p * phraseBars
           g.fillStyle = isBar1 ? '#fbbf24' : '#8b95a5'
-          g.fillText(isBar1 ? 'B1' : String(barNum), x + 3 * dpr, rulerH / 2)
+          g.fillText(isBar1 ? 'B1' : String(barNum), x + 3 * dpr, ribbonH - 3 * dpr)
         }
       }
-      g.textBaseline = 'alphabetic'
     }
 
-    // Waveform body: 4-stem lanes, 3-band lanes, or RGB unified
+    // Waveform body (RMS body + peak outline)
     if (this.mode === 'stems' && this.hasStems) {
       this.drawStemLanes(g, deck, 0, bodyY, w, bodyH, 0, secPerPx, false)
     } else if (this.mode === 'bands') {
@@ -461,7 +540,7 @@ export class WaveformView {
       this.drawRgbWave(g, 0, bodyY, w, bodyH, 0, secPerPx)
     }
 
-    // Subtle dim veil over played portion
+    // Dim veil over played portion
     const pos = deck.audiblePosition
     const playX = Math.max(0, Math.min(w, Math.round(pos / secPerPx)))
     g.fillStyle = 'rgba(6,8,12,0.34)'
@@ -469,7 +548,7 @@ export class WaveformView {
 
     // Active loop region
     if (deck.activeLoop) {
-      const lx0 = Math.max(0, (deck.activeLoop.start) / secPerPx)
+      const lx0 = Math.max(0, deck.activeLoop.start / secPerPx)
       const lx1 = Math.min(w, (deck.activeLoop.start + deck.activeLoop.len) / secPerPx)
       g.fillStyle = 'rgba(168,85,247,0.28)'
       g.fillRect(lx0, bodyY, Math.max(2, lx1 - lx0), bodyH)
@@ -487,7 +566,7 @@ export class WaveformView {
     g.strokeRect(vx0 + 0.5, bodyY + 0.5, Math.max(4, vx1 - vx0), bodyH - 1)
     g.lineWidth = 1
 
-    // Cue & Hot Cue ticks across the whole track
+    // Cue & Hot Cue ticks
     this.drawOverviewMarker(g, w, h, bodyY, secPerPx, dpr, deck.cuePoint, CUE_COLOR, 'C')
     for (let i = 0; i < deck.hotCues.length && i < HC_COLORS.length; i++) {
       const hc = deck.hotCues[i]
@@ -503,31 +582,33 @@ export class WaveformView {
     g.stroke()
     g.lineWidth = 1
 
-    // Hover inspector — shows exact bar + timestamp for measuring intros/phrases
+    // Hover inspector (Section + Bar.Beat + Timestamp)
     if (this.hoverOverviewFrac != null) {
       const ht = this.hoverOverviewFrac * dur
       const hx = Math.round(this.hoverOverviewFrac * w)
-      g.strokeStyle = 'rgba(255,255,255,0.55)'
+      g.strokeStyle = 'rgba(255,255,255,0.6)'
       g.setLineDash([2 * dpr, 2 * dpr])
       g.beginPath()
-      g.moveTo(hx + 0.5, rulerH)
+      g.moveTo(hx + 0.5, ribbonH)
       g.lineTo(hx + 0.5, h)
       g.stroke()
       g.setLineDash([])
 
       const bb = barBeatAt(deck, ht)
-      const label = bb ? `BAR ${bb.bar}.${bb.beat} · ${fmtShortTime(ht)}` : fmtShortTime(ht)
-      g.font = `600 ${9.5 * dpr}px ui-monospace, monospace`
+      const sec = sectionAt(sections, ht)
+      const secPrefix = sec ? `${sec.label} · ` : ''
+      const label = bb ? `${secPrefix}BAR ${bb.bar}.${bb.beat} · ${fmtShortTime(ht)}` : fmtShortTime(ht)
+      g.font = `700 ${9 * dpr}px ui-monospace, monospace`
       const tw = g.measureText(label).width + 10 * dpr
       const bx = Math.min(w - tw - 2 * dpr, Math.max(2 * dpr, hx - tw / 2))
-      g.fillStyle = 'rgba(11,13,16,0.92)'
-      g.fillRect(bx, 1 * dpr, tw, rulerH - 2 * dpr)
-      g.strokeStyle = 'rgba(255,255,255,0.28)'
-      g.strokeRect(bx + 0.5, 1 * dpr + 0.5, tw - 1, rulerH - 2 * dpr - 1)
+      g.fillStyle = 'rgba(9,11,15,0.95)'
+      g.fillRect(bx, 1 * dpr, tw, ribbonH - 2 * dpr)
+      g.strokeStyle = sec ? SECTION_COLORS[sec.label].border : 'rgba(255,255,255,0.35)'
+      g.strokeRect(bx + 0.5, 1 * dpr + 0.5, tw - 1, ribbonH - 2 * dpr - 1)
       g.fillStyle = '#f8fafc'
       g.textAlign = 'center'
       g.textBaseline = 'middle'
-      g.fillText(label, bx + tw / 2, rulerH / 2)
+      g.fillText(label, bx + tw / 2, ribbonH / 2 + 0.5 * dpr)
       g.textBaseline = 'alphabetic'
     }
   }
@@ -566,7 +647,7 @@ export class WaveformView {
   }
 
   // -------------------------------------------------------------------------
-  // 2. Close-up Scrolling Waveform (4-stem lanes / 3-band lanes / RGB)
+  // 2. Close-up Scrolling Waveform
   // -------------------------------------------------------------------------
 
   private drawDetail(deck: Deck): void {
@@ -604,13 +685,23 @@ export class WaveformView {
     this.lastT0 = t0
     const secPerPx = this.zoomSec / w
 
+    // Subtle section tint along ruler in close-up view
+    const sections = deck.track?.sections ?? []
+    for (const s of sections) {
+      if (s.tEnd < t0 || s.tStart > t1) continue
+      const sx0 = Math.max(0, Math.round((s.tStart - t0) / secPerPx))
+      const sx1 = Math.min(w, Math.round((s.tEnd - t0) / secPerPx))
+      const pal = SECTION_COLORS[s.label]
+      g.fillStyle = pal.bg
+      g.fillRect(sx0, 0, Math.max(1, sx1 - sx0), Math.round(3 * dpr))
+    }
+
     // Waveform body
     if (this.mode === 'stems' && this.hasStems) {
       this.drawStemLanes(g, deck, 0, bodyY, w, bodyH, t0, secPerPx, true)
     } else if (this.mode === 'bands') {
       this.drawBandLanes(g, 0, bodyY, w, bodyH, t0, secPerPx, true)
     } else {
-      // center guide line
       g.strokeStyle = 'rgba(255,255,255,0.07)'
       g.beginPath()
       g.moveTo(0, bodyY + bodyH / 2)
@@ -626,7 +717,7 @@ export class WaveformView {
       const bpb = grid.beatsPerBar ?? 4
       const phraseBars = grid.phraseBars ?? 8
       let k = Math.floor((t0 - grid.offset) / beat) - 1
-      g.font = `600 ${9.5 * dpr}px ui-monospace, monospace`
+      g.font = `600 ${9 * dpr}px ui-monospace, monospace`
       g.textAlign = 'left'
       g.textBaseline = 'middle'
       for (;;) {
@@ -644,13 +735,13 @@ export class WaveformView {
             g.strokeStyle = 'rgba(251,191,36,0.9)'
             g.lineWidth = Math.max(1.5, 1.5 * dpr)
           } else if (isPhrase) {
-            g.strokeStyle = 'rgba(255,255,255,0.58)'
+            g.strokeStyle = 'rgba(255,255,255,0.55)'
             g.lineWidth = Math.max(1, dpr)
           } else if (isDownbeat) {
-            g.strokeStyle = 'rgba(255,255,255,0.32)'
+            g.strokeStyle = 'rgba(255,255,255,0.3)'
             g.lineWidth = 1
           } else {
-            g.strokeStyle = 'rgba(255,255,255,0.1)'
+            g.strokeStyle = 'rgba(255,255,255,0.09)'
             g.lineWidth = 1
           }
           g.beginPath()
@@ -662,11 +753,40 @@ export class WaveformView {
           if (isDownbeat) {
             const barNum = barZero >= 0 ? barZero + 1 : barZero
             g.fillStyle = isBar1 ? '#fbbf24' : isPhrase ? '#f1f5f9' : '#7d8590'
-            g.fillText(isBar1 ? 'BAR 1' : String(barNum), x + 3 * dpr, rulerH / 2)
+            g.fillText(isBar1 ? 'BAR 1' : String(barNum), x + 3 * dpr, rulerH / 2 + 1 * dpr)
           }
         }
         k++
       }
+      g.textBaseline = 'alphabetic'
+    }
+
+    // Section transition badges right on the close-up ruler
+    for (const s of sections) {
+      if (s.tStart < t0 || s.tStart > t1) continue
+      const x = Math.round((s.tStart - t0) / secPerPx)
+      const pal = SECTION_COLORS[s.label]
+      g.strokeStyle = pal.border
+      g.lineWidth = Math.max(1.5, 1.5 * dpr)
+      g.beginPath()
+      g.moveTo(x + 0.5, rulerH)
+      g.lineTo(x + 0.5, h)
+      g.stroke()
+      g.lineWidth = 1
+
+      const label = s.hasVocals ? `${s.label} ♪` : s.label
+      g.font = `700 ${8.5 * dpr}px ui-monospace, monospace`
+      const tw = g.measureText(label).width + 8 * dpr
+      g.fillStyle = '#090b0f'
+      g.fillRect(x, 2 * dpr, tw, rulerH - 3 * dpr)
+      g.fillStyle = pal.bg
+      g.fillRect(x, 2 * dpr, tw, rulerH - 3 * dpr)
+      g.strokeStyle = pal.border
+      g.strokeRect(x + 0.5, 2 * dpr + 0.5, tw - 1, rulerH - 4 * dpr)
+      g.fillStyle = pal.fg
+      g.textAlign = 'left'
+      g.textBaseline = 'middle'
+      g.fillText(label, x + 4 * dpr, rulerH / 2 + 1 * dpr)
       g.textBaseline = 'alphabetic'
     }
 
@@ -687,14 +807,14 @@ export class WaveformView {
       g.lineWidth = 1
     }
 
-    // Cue & Hot Cue colored flags
+    // Cue & Hot Cue flags
     this.drawDetailFlag(g, w, h, rulerH, t0, secPerPx, dpr, deck.cuePoint, CUE_COLOR, 'CUE')
     for (let i = 0; i < deck.hotCues.length && i < HC_COLORS.length; i++) {
       const hc = deck.hotCues[i]
       if (hc != null) this.drawDetailFlag(g, w, h, rulerH, t0, secPerPx, dpr, hc, HC_COLORS[i], String(i + 1))
     }
 
-    // Playhead with top triangle
+    // Playhead
     const px = Math.round(PLAYHEAD_FRAC * w)
     g.strokeStyle = '#ffffff'
     g.lineWidth = Math.max(1.5, 1.5 * dpr)
@@ -750,7 +870,7 @@ export class WaveformView {
   }
 
   // -------------------------------------------------------------------------
-  // Waveform painters (shared between overview & close-up)
+  // Waveform painters: RMS body (100%) + peak outline (42%) for crisp dynamics
   // -------------------------------------------------------------------------
 
   private drawRgbWave(
@@ -763,32 +883,36 @@ export class WaveformView {
     secPerPx: number
   ): void {
     const f = this.freq!
-    const mip = pickMip(f.amp, f.pps, secPerPx)
-    const ampArr = f.amp[mip.idx]
+    const mip = pickMip(f.peak, f.pps, secPerPx)
+    const pkArr = f.peak[mip.idx]
+    const rmsArr = f.rms[mip.idx]
     const loArr = f.lo[mip.idx]
     const midArr = f.mid[mip.idx]
     const hiArr = f.hi[mip.idx]
     const pps = mip.pps
     const cy = y0 + h / 2
     const maxH = h * 0.46
-    let lastColorKey = -1
 
     for (let x = 0; x < w; x++) {
       const ta = t0 + x * secPerPx
       const tb = ta + secPerPx
-      const a = sampleMax(ampArr, pps, ta, tb)
-      if (a <= 0.002) continue
-      const vLo = sampleMax(loArr, pps, ta, tb)
-      const vMid = sampleMax(midArr, pps, ta, tb)
-      const vHi = sampleMax(hiArr, pps, ta, tb)
+      const pk = sampleRange(pkArr, pps, ta, tb, 'max')
+      if (pk <= 0.003) continue
+      const rm = sampleRange(rmsArr, pps, ta, tb, 'avg')
+      const vLo = sampleRange(loArr, pps, ta, tb, 'avg')
+      const vMid = sampleRange(midArr, pps, ta, tb, 'avg')
+      const vHi = sampleRange(hiArr, pps, ta, tb, 'avg')
       const [r, gr, b] = freqRgb(vLo, vMid, vHi)
-      const key = ((r >> 3) << 10) | ((gr >> 3) << 5) | (b >> 3)
-      if (key !== lastColorKey) {
-        g.fillStyle = `rgb(${r},${gr},${b})`
-        lastColorKey = key
-      }
-      const bh = Math.max(1, a * maxH)
-      g.fillRect(x0 + x, cy - bh, 1, bh * 2)
+
+      // Peak envelope (translucent halo — shows transients without flattening dynamics)
+      const pkH = Math.max(1, pk * maxH)
+      g.fillStyle = `rgba(${r},${gr},${b},0.42)`
+      g.fillRect(x0 + x, cy - pkH, 1, pkH * 2)
+
+      // Solid RMS core (clearly separates -15 dB breakdowns from -6.5 dB drops!)
+      const rmH = Math.max(1, Math.min(pk, rm) * maxH)
+      g.fillStyle = `rgb(${r},${gr},${b})`
+      g.fillRect(x0 + x, cy - rmH, 1, rmH * 2)
     }
   }
 
@@ -803,7 +927,7 @@ export class WaveformView {
     showLabels: boolean
   ): void {
     const f = this.freq!
-    const mip = pickMip(f.amp, f.pps, secPerPx)
+    const mip = pickMip(f.peak, f.pps, secPerPx)
     const arrays = [f.lo[mip.idx], f.mid[mip.idx], f.hi[mip.idx]]
     const pps = mip.pps
     const laneH = h / 3
@@ -822,10 +946,10 @@ export class WaveformView {
       const arr = arrays[l]
       const meta = BAND_META[l]
       g.fillStyle = meta.color
-      const maxH = laneH * 0.44
+      const maxH = laneH * 0.45
       for (let x = 0; x < w; x++) {
         const ta = t0 + x * secPerPx
-        const m = sampleMax(arr, pps, ta, ta + secPerPx)
+        const m = sampleRange(arr, pps, ta, ta + secPerPx, 'avg')
         if (m > 0.004) {
           const bh = Math.max(1, m * maxH)
           g.fillRect(x0 + x, cy - bh, 1, bh * 2)
@@ -867,18 +991,27 @@ export class WaveformView {
       }
 
       if (pyr) {
-        const mip = pickMip(pyr.levels, pyr.pps, secPerPx)
+        const mip = pickMip(pyr.peaks, pyr.pps, secPerPx)
+        const pkArr = pyr.peaks[mip.idx]
+        const rmsArr = pyr.rms[mip.idx]
         const alpha = 0.16 + 0.84 * Math.min(1, Math.max(0, gain))
         const [r, gr, b] = meta.rgb
-        g.fillStyle = `rgba(${r},${gr},${b},${alpha.toFixed(2)})`
+        const haloStyle = `rgba(${r},${gr},${b},${(alpha * 0.42).toFixed(2)})`
+        const bodyStyle = `rgba(${r},${gr},${b},${alpha.toFixed(2)})`
         const maxH = laneH * 0.45
+
         for (let x = 0; x < w; x++) {
           const ta = t0 + x * secPerPx
-          const m = sampleMax(mip.arr, mip.pps, ta, ta + secPerPx)
-          if (m > 0.003) {
-            const bh = Math.max(1, m * maxH)
-            g.fillRect(x0 + x, cy - bh, 1, bh * 2)
-          }
+          const tb = ta + secPerPx
+          const pk = sampleRange(pkArr, mip.pps, ta, tb, 'max')
+          if (pk <= 0.003) continue
+          const rm = sampleRange(rmsArr, mip.pps, ta, tb, 'avg')
+          const pkH = Math.max(1, pk * maxH)
+          g.fillStyle = haloStyle
+          g.fillRect(x0 + x, cy - pkH, 1, pkH * 2)
+          const rmH = Math.max(1, Math.min(pk, rm) * maxH)
+          g.fillStyle = bodyStyle
+          g.fillRect(x0 + x, cy - rmH, 1, rmH * 2)
         }
       }
 

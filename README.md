@@ -7,8 +7,24 @@ A vibe-coded, stem-aware DJ tool. Two Web Audio decks, automatic beatgrids, temp
 auto-sync, keyboard control, and MIDI-learn for anything with pads and faders — built with a
 Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI controller.
 
-## What works today (v1.1)
+## What works today (v1.2)
 
+- **Instant Arrangement & Phrase Countdown**: bar-synchronous song structure analyzer
+  runs in <30ms on load — renders a color-coded Arrangement Ribbon (`INTRO`, `GROOVE`,
+  `BREAK`, `BUILD`, `DROP`, `OUTRO`, plus `♪` vocal badges once stems finish) directly
+  above the overview strip (click any block to jump), shows a live **`BUILD → DROP in 2.3`**
+  countdown in the HUD, and powers one-click **`AUTO CUES`** (Hot Cues 1–4 on Intro /
+  Drop 1 / Break / Drop 2).
+- **DJ Co-Pilot (Next Up + Transition Recipes)**: ranks the **Top 5 next tracks** from
+  your crate by Camelot harmonic compatibility (`MATCH`, `+1 LIFT`, `-1 COOL`, `REL`,
+  `+2 BOOST`), tempo fit (incl. half/double-time), and vibe (`FLOW` / `LIFT` / `CHILL`).
+  Computes a live **5-point Transition Plan** between decks (mix-in/out cues, 4B/8B loop
+  suggestion, HPF/LPF move, kick/drums owner, stem blend strategy, and vocal-clash warnings)
+  with one-click **`PREP`** cueing.
+- **Instant Serato / ID3 Tag Reader**: reads embedded `Serato BeatGrid` (exact downbeat +
+  BPM), `TBPM`, and `TKEY` (verified Camelot wheel) right in the browser at drop time —
+  and supports fast batch crate drops (e.g. dropping 25+ MP3s at once populates the crate
+  and Co-Pilot in seconds, with a 1-at-a-time Demucs stem queue).
 - **Timing & Harmony HUD**: top-of-deck readout shows live BPM, original track BPM (`ORIG`),
   clickable pitch delta, harmonic-wheel color-coded Camelot key + full musical key name,
   and **KEY LOCK** + **SYNC** + **🎧 CUE** right alongside them, plus live `BAR.BEAT`,

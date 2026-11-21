@@ -2,6 +2,7 @@ export interface DeckRefs {
   root: HTMLElement
   name: HTMLElement
   barBeat: HTMLElement
+  phraseCd: HTMLElement
   pos: HTMLElement
   rem: HTMLElement
   bpm: HTMLElement
@@ -15,6 +16,8 @@ export interface DeckRefs {
   waveform: HTMLCanvasElement
   bpbBtn: HTMLButtonElement
   phraseBtn: HTMLButtonElement
+  autoCuesBtn: HTMLButtonElement
+  getStemsBtn: HTMLButtonElement
   wfRgbBtn: HTMLButtonElement
   wfBandsBtn: HTMLButtonElement
   wfStemsBtn: HTMLButtonElement
@@ -73,6 +76,13 @@ export interface AppRefs {
   midiKo2: HTMLButtonElement
   midiWatch: HTMLButtonElement
   midiWizardStatus: HTMLElement
+  tabCopilot: HTMLButtonElement
+  tabStream: HTMLButtonElement
+  copilotPane: HTMLElement
+  streamPane: HTMLElement
+  vibeBtns: HTMLButtonElement[]
+  planBox: HTMLElement
+  nextList: HTMLUListElement
   streamStatus: HTMLElement
   scConnect: HTMLButtonElement
   scQuery: HTMLInputElement
@@ -85,6 +95,7 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
   <div class="deck-head">
     <span class="deck-badge">${id}</span>
     <span class="track-name">— empty deck —</span>
+    <span class="phrase-cd" hidden title="Current section & bars.beats until next transition"></span>
     <span class="bar-beat" title="Current Bar.Beat from Measure 1">—</span>
     <span class="time-group">
       <span class="pos">0:00.0</span>
@@ -138,6 +149,8 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
         <button class="mini-btn" data-act="deck${id}.bpmDouble" title="Double BPM">2×</button>
         <button class="mini-btn bpb-btn" data-act="deck${id}.beatsPerBar" title="Beats per measure (click to cycle)">4/4</button>
         <button class="mini-btn phrase-btn" data-act="deck${id}.phraseBars" title="Phrase block size on overview (click to cycle)">8B</button>
+        <button class="mini-btn auto-cues-btn" title="Drop Hot Cues 1–4 onto detected sections (Intro, Drop 1, Break, Drop 2)">AUTO CUES</button>
+        <button class="mini-btn get-stems-btn" hidden title="Separate Drums / Bass / Other / Vocals via Demucs">GET STEMS</button>
       </div>
       <div class="grid-group wf-controls">
         <div class="seg-group" role="group" aria-label="Waveform mode">
@@ -245,6 +258,7 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
     root,
     name: q('.track-name'),
     barBeat: q('.bar-beat'),
+    phraseCd: q('.phrase-cd'),
     pos: q('.pos'),
     rem: q('.rem'),
     bpm: q('.bpm'),
@@ -258,6 +272,8 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
     waveform: q('.waveform'),
     bpbBtn: q('.bpb-btn'),
     phraseBtn: q('.phrase-btn'),
+    autoCuesBtn: q('.auto-cues-btn'),
+    getStemsBtn: q('.get-stems-btn'),
     wfRgbBtn: q('.wf-rgb'),
     wfBandsBtn: q('.wf-bands'),
     wfStemsBtn: q('.wf-stems'),
@@ -345,11 +361,25 @@ export function buildApp(root: HTMLElement): AppRefs {
       </div>
       <ul class="crate-list"></ul>
     </section>
-    <section class="stream-panel">
-      <div class="panel-title">STREAM <span class="stream-status"></span></div>
-      <div class="stream-controls"><button class="sc-connect">connect SoundCloud</button></div>
-      <div class="stream-search"><input class="sc-q" type="text" placeholder="search SoundCloud… ⏎" /></div>
-      <ul class="stream-results"></ul>
+    <section class="stream-panel copilot-panel">
+      <div class="panel-tabs">
+        <button class="tab-btn tab-copilot active">CO-PILOT</button>
+        <button class="tab-btn tab-stream">STREAM <span class="stream-status"></span></button>
+        <div class="vibe-pills">
+          <button class="vibe-btn active" data-vibe="flow" title="Match energy & groove">FLOW</button>
+          <button class="vibe-btn" data-vibe="lift" title="Step up energy">LIFT</button>
+          <button class="vibe-btn" data-vibe="chill" title="Bring energy down">CHILL</button>
+        </div>
+      </div>
+      <div class="copilot-pane">
+        <div class="plan-box"></div>
+        <ul class="next-list"></ul>
+      </div>
+      <div class="stream-pane" hidden>
+        <div class="stream-controls"><button class="sc-connect">connect SoundCloud</button></div>
+        <div class="stream-search"><input class="sc-q" type="text" placeholder="search SoundCloud… ⏎" /></div>
+        <ul class="stream-results"></ul>
+      </div>
     </section>
     <section class="midi-panel">
       <div class="panel-title">MIDI <span class="midi-devices"></span></div>
@@ -392,6 +422,13 @@ export function buildApp(root: HTMLElement): AppRefs {
     midiKo2: footer.querySelector('.midi-ko2') as HTMLButtonElement,
     midiWatch: footer.querySelector('.midi-watch') as HTMLButtonElement,
     midiWizardStatus: footer.querySelector('.midi-wizard-status') as HTMLElement,
+    tabCopilot: footer.querySelector('.tab-copilot') as HTMLButtonElement,
+    tabStream: footer.querySelector('.tab-stream') as HTMLButtonElement,
+    copilotPane: footer.querySelector('.copilot-pane') as HTMLElement,
+    streamPane: footer.querySelector('.stream-pane') as HTMLElement,
+    vibeBtns: Array.from(footer.querySelectorAll<HTMLButtonElement>('.vibe-btn')),
+    planBox: footer.querySelector('.plan-box') as HTMLElement,
+    nextList: footer.querySelector('.next-list') as HTMLUListElement,
     streamStatus: footer.querySelector('.stream-status') as HTMLElement,
     scConnect: footer.querySelector('.sc-connect') as HTMLButtonElement,
     scQuery: footer.querySelector('.sc-q') as HTMLInputElement,

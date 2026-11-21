@@ -156,8 +156,21 @@ ipcMain.handle('rec:finish', async (_e, frames: number, sampleRate: number) => {
 // Heavy deps (librosa ~200MB, demucs+torch ~2GB) stay OUT of the DMG; instead
 // the app builds a private venv in userData on demand and always prefers it.
 
+function envDir(): string {
+  return path.join(app.getPath('userData'), 'pyenv')
+}
+
 function envPythonPath(): string {
-  return path.join(app.getPath('userData'), 'pyenv', 'bin', 'python3')
+  return path.join(envDir(), 'bin', 'python3')
+}
+
+/** Ensure Homebrew/local binaries (python3.12, ffmpeg, uv) are on PATH even when launched from Finder. */
+function enrichedEnv(): NodeJS.ProcessEnv {
+  const extra = ['/opt/homebrew/bin', '/usr/local/bin']
+  const cur = process.env.PATH ?? '/usr/bin:/bin:/usr/sbin:/sbin'
+  const parts = cur.split(':')
+  for (const p of extra) if (!parts.includes(p)) parts.unshift(p)
+  return { ...process.env, PATH: parts.join(':') }
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -169,8 +182,46 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
+async function pythonVersion(bin: string): Promise<[number, number] | null> {
+  return new Promise((resolve) => {
+    const child = spawn(bin, ['-c', 'import sys; print(sys.version_info[0], sys.version_info[1])'], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      env: enrichedEnv()
+    })
+    let out = ''
+    child.stdout?.on('data', (d) => (out += d.toString()))
+    child.on('error', () => resolve(null))
+    child.on('close', (c) => {
+      if (c !== 0) return resolve(null)
+      const [maj, min] = out.trim().split(/\s+/).map(Number)
+      resolve(Number.isFinite(maj) && Number.isFinite(min) ? [maj, min] : null)
+    })
+  })
+}
+
+/** Prefer Python 3.11–3.13 (best torch/demucs wheel support); avoid Apple's ancient 3.9.6. */
+async function findBestSystemPython(): Promise<string> {
+  const candidates = [
+    '/opt/homebrew/bin/python3.12',
+    '/opt/homebrew/bin/python3.11',
+    '/opt/homebrew/bin/python3.13',
+    '/usr/local/bin/python3.12',
+    '/usr/local/bin/python3.11',
+    '/opt/homebrew/bin/python3',
+    'python3'
+  ]
+  let fallback = 'python3'
+  for (const c of candidates) {
+    const v = await pythonVersion(c)
+    if (!v) continue
+    if (v[0] === 3 && v[1] >= 11 && v[1] <= 13) return c
+    if (v[0] === 3 && v[1] >= 10) fallback = c
+  }
+  return fallback
+}
+
 async function resolvePythonBin(): Promise<string> {
-  return (await fileExists(envPythonPath())) ? envPythonPath() : 'python3'
+  return (await fileExists(envPythonPath())) ? envPythonPath() : await findBestSystemPython()
 }
 
 function envLog(line: string): void {
@@ -184,7 +235,7 @@ function envLog(line: string): void {
 
 function runStream(bin: string, args: string[], cwd?: string): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], cwd })
+    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], cwd, env: enrichedEnv() })
     const onLine = (d: Buffer) => envLog(d.toString().trimEnd())
     child.stdout?.on('data', onLine)
     child.stderr?.on('data', onLine)
@@ -199,7 +250,7 @@ function runStream(bin: string, args: string[], cwd?: string): Promise<number> {
 async function probeImports(bin: string): Promise<{ librosa: boolean; demucs: boolean }> {
   const probe = (code: string) =>
     new Promise<boolean>((resolve) => {
-      const child = spawn(bin, ['-c', code], { stdio: ['ignore', 'ignore', 'ignore'] })
+      const child = spawn(bin, ['-c', code], { stdio: ['ignore', 'ignore', 'ignore'], env: enrichedEnv() })
       child.on('error', () => resolve(false))
       child.on('close', (c) => resolve(c === 0))
     })
@@ -212,7 +263,7 @@ let envInstalling = false
 
 ipcMain.handle('env:status', async () => {
   const venv = await fileExists(envPythonPath())
-  const bin = venv ? envPythonPath() : 'python3'
+  const bin = venv ? envPythonPath() : await findBestSystemPython()
   const probe = await probeImports(bin)
   return { venv, python: bin, installing: envInstalling, ...probe }
 })
@@ -221,20 +272,31 @@ ipcMain.handle('env:install', async (_e, opts: { stems?: boolean } = {}) => {
   if (envInstalling) return { ok: false, error: 'installation already running' }
   envInstalling = true
   try {
-    if (!(await fileExists(envPythonPath()))) {
-      envLog('creating private python environment (one time)…')
-      const code = await runStream('python3', ['-m', 'venv', path.join(app.getPath('userData'), 'pyenv')])
+    const existing = await fileExists(envPythonPath())
+    const existingVer = existing ? await pythonVersion(envPythonPath()) : null
+    // Recreate venv if missing or built on Python < 3.10 (Apple's 3.9.6 can't install modern demucs/torch)
+    const tooOld = !!existingVer && (existingVer[0] < 3 || existingVer[1] < 10)
+    if (!existing || tooOld) {
+      const sysPy = await findBestSystemPython()
+      if (tooOld) {
+        envLog(`upgrading pyenv from Python ${existingVer![0]}.${existingVer![1]} to ${sysPy}…`)
+        await fs.rm(envDir(), { recursive: true, force: true })
+      } else {
+        envLog(`creating private python environment with ${sysPy}…`)
+      }
+      const code = await runStream(sysPy, ['-m', 'venv', envDir()])
       if (code !== 0) {
         return {
           ok: false,
-          error: 'python3 -m venv failed — install Command Line Tools first: xcode-select --install'
+          error: 'python3 -m venv failed — install Python 3.12 (brew install python@3.12)'
         }
       }
+      await runStream(envPythonPath(), ['-m', 'pip', 'install', '--upgrade', 'pip'])
     }
-    const args = ['-m', 'pip', 'install', '--prefer-binary', '--upgrade', 'librosa', 'soundfile']
-    if (opts.stems) args.push('demucs')
-    envLog(`pip ${args.slice(3).join(' ')} — this can take a while (stems/torch ≈ 2 GB, one time)…`)
-    const code = await runStream(envPythonPath(), args)
+    const pkgs = ['librosa', 'soundfile']
+    if (opts.stems) pkgs.push('demucs', 'torch', 'torchaudio')
+    envLog(`pip install ${pkgs.join(' ')} — this can take a while (stems/torch ≈ 2 GB, one time)…`)
+    const code = await runStream(envPythonPath(), ['-m', 'pip', 'install', '--prefer-binary', '--upgrade', ...pkgs])
     return code === 0 ? { ok: true } : { ok: false, error: 'pip install failed — see log panel' }
   } finally {
     envInstalling = false
@@ -242,9 +304,8 @@ ipcMain.handle('env:install', async (_e, opts: { stems?: boolean } = {}) => {
 })
 
 /**
- * Runs tools/analyze.py (librosa bpm/key + optional demucs stems) and returns
- * its JSON result. Fails soft: { ok: false, error } so the renderer can fall
- * back to the in-browser beatgrid estimator.
+ * Runs tools/analyze.py (Serato/ID3 tags + librosa bpm/key + optional demucs stems)
+ * and returns its JSON result. Fails soft: { ok: false, error }.
  */
 ipcMain.handle('ingest:analyze', async (_e, filePath: string, opts: AnalyzeOptions = {}) => {
   const script = app.isPackaged
@@ -256,7 +317,7 @@ ipcMain.handle('ingest:analyze', async (_e, filePath: string, opts: AnalyzeOptio
     args.push('--stems', '--stems-dir', opts.stemsDir ?? path.join(app.getPath('userData'), 'stems'))
   }
   return await new Promise<{ ok: boolean; result?: unknown; error?: string }>((resolve) => {
-    const child = spawn(pythonBin, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(pythonBin, args, { stdio: ['ignore', 'pipe', 'pipe'], env: enrichedEnv() })
     let out = ''
     let err = ''
     child.stdout.on('data', (d) => (out += d.toString()))

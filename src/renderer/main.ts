@@ -12,6 +12,9 @@ import { registerProvider, type StreamTrackRef } from './sources/provider'
 import { delayFracLabel } from './engine/fx'
 import { AudioMemory } from './engine/memory'
 import { computeLoudness, autoGainDb, TARGET_LUFS } from './engine/analysis'
+import { parseAudioTags, type AudioTags } from './engine/id3'
+import { analyzeStructure, annotateVocals, pickAutoCues, SECTION_COLORS } from './engine/structure'
+import { planTransition, recommendNext, type VibeMode } from './engine/copilot'
 import { Sampler } from './engine/sampler'
 import { Recorder } from './engine/recorder'
 import type { MidiBinding } from './midi/midi'
@@ -55,6 +58,13 @@ const stemSavedGain: Record<'A' | 'B', number[]> = { A: [1, 1, 1, 1], B: [1, 1, 
 
 let focusedDeck: 'A' | 'B' = 'A'
 let userDataDir = ''
+let envHasDemucs = false
+let vibeMode: VibeMode = 'flow'
+
+// Serialized 1-at-a-time Demucs/sidecar queue so batch imports never spawn 25 parallel PyTorch processes
+const sidecarQueue: Track[] = []
+const sidecarQueuedIds = new Set<string>()
+let sidecarBusyId: string | null = null
 
 // ---------------------------------------------------------------------------
 // logging
@@ -71,17 +81,29 @@ function log(msg: string): void {
 // audio helpers
 // ---------------------------------------------------------------------------
 
-async function decodeFile(file: File): Promise<AudioBuffer> {
+async function decodeFileWithTags(file: File): Promise<{ buffer: AudioBuffer; tags: AudioTags }> {
   const ab = await file.arrayBuffer()
-  return await engine.ctx.decodeAudioData(ab)
+  const tags = parseAudioTags(ab)
+  const buffer = await engine.ctx.decodeAudioData(ab)
+  return { buffer, tags }
 }
 
-async function decodePath(path: string): Promise<AudioBuffer> {
+async function decodeFile(file: File): Promise<AudioBuffer> {
+  return (await decodeFileWithTags(file)).buffer
+}
+
+async function decodePathWithTags(path: string): Promise<{ buffer: AudioBuffer; tags: AudioTags }> {
   const api = window.vibedeck
   if (!api) throw new Error('not running under electron')
   const u8 = await api.readAudio(path)
   const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
-  return await engine.ctx.decodeAudioData(ab)
+  const tags = parseAudioTags(ab)
+  const buffer = await engine.ctx.decodeAudioData(ab)
+  return { buffer, tags }
+}
+
+async function decodePath(path: string): Promise<AudioBuffer> {
+  return (await decodePathWithTags(path)).buffer
 }
 
 function emptyBuffer(): AudioBuffer {
@@ -124,7 +146,28 @@ function slug(s: string): string {
   return (h >>> 0).toString(36)
 }
 
-async function ingest(path: string, name: string, buffer: AudioBuffer): Promise<void> {
+function applyTagsToTrack(track: Track, tags: AudioTags): void {
+  if (tags.bpm && track.analysisSource !== 'manual') {
+    track.grid = {
+      ...(track.grid ?? {}),
+      bpm: tags.bpm,
+      offset: tags.offset ?? track.grid?.offset ?? 0
+    }
+    if (tags.offset != null) track.analysisSource = 'sidecar'
+  }
+  if (tags.key) {
+    track.key = tags.key
+    track.camelot = tags.camelot
+  }
+}
+
+async function ingest(
+  path: string,
+  name: string,
+  buffer: AudioBuffer,
+  tags: AudioTags = {},
+  opts: { loadIntoDeck?: boolean; runStems?: boolean } = {}
+): Promise<Track> {
   const existing = crate.tracks.find((t) => t.path === path)
   const track: Track = existing
     ? { ...existing }
@@ -139,26 +182,80 @@ async function ingest(path: string, name: string, buffer: AudioBuffer): Promise<
   track.durationSec = buffer.duration
   track.sampleRate = buffer.sampleRate
   track.pcmBytes = AudioMemory.bytesOf(buffer)
-  if (!track.grid || track.analysisSource === 'browser') {
+
+  // 1. Embedded Serato / ID3 tags first (exact BPM, downbeat, key in <1ms)
+  applyTagsToTrack(track, tags)
+
+  // 2. Fallback browser beatgrid when tags had no BPM
+  if (!track.grid || track.grid.bpm <= 0) {
     track.grid = computeBeatGrid(buffer)
     track.analysisSource = 'browser'
   }
+
+  // 3. Instant loudness + bar-synchronous Arrangement & Vibe (<30ms)
+  if (track.gainDb == null) {
+    track.lufs = computeLoudness(buffer)
+    track.gainDb = autoGainDb(track.lufs)
+  }
+  if (!track.sections?.length || !track.vibe) {
+    const { sections, vibe } = analyzeStructure(buffer, track.grid)
+    track.sections = sections
+    track.vibe = vibe
+  }
+
   track.analyzedAt = new Date().toISOString()
   crate.upsert(track)
   renderCrate()
-  log(`added "${name}" — browser BPM ${track.grid.bpm || '?'}`)
 
-  await loadTrackIntoDeck(track, buffer)
+  const tagNote = tags.bpm ? 'Serato/ID3' : 'browser'
+  log(
+    `added "${name}" — ${track.grid.bpm.toFixed(1)} BPM (${tagNote})` +
+      (track.camelot ? ` · ${track.camelot}` : '') +
+      ` · ${track.sections?.length ?? 0} sections`
+  )
 
-  if (!track.stems && track.analysisSource !== 'sidecar') {
-    void enhanceWithSidecar(track)
+  if (opts.loadIntoDeck !== false) {
+    await loadTrackIntoDeck(track, buffer)
+  }
+
+  // Queue sidecar if we still need stems (when requested) or if key is still missing
+  const needStems = opts.runStems !== false && !track.stems && envHasDemucs
+  const needKey = !track.key && !track.source
+  if ((needStems || needKey) && !track.source && track.stemsAllowed !== false) {
+    queueSidecar(track)
+  }
+  renderCopilot()
+  return track
+}
+
+function queueSidecar(track: Track): void {
+  if (track.source || track.stemsAllowed === false) return
+  if (sidecarBusyId === track.id || sidecarQueuedIds.has(track.id)) return
+  sidecarQueuedIds.add(track.id)
+  sidecarQueue.push(track)
+  updateStemsButtons()
+  void drainSidecarQueue()
+}
+
+async function drainSidecarQueue(): Promise<void> {
+  if (sidecarBusyId) return
+  while (sidecarQueue.length > 0) {
+    const track = sidecarQueue.shift()!
+    sidecarQueuedIds.delete(track.id)
+    sidecarBusyId = track.id
+    updateStemsButtons()
+    try {
+      await enhanceWithSidecar(track)
+    } finally {
+      sidecarBusyId = null
+      updateStemsButtons()
+    }
   }
 }
 
 async function enhanceWithSidecar(track: Track): Promise<void> {
   const api = window.vibedeck
   if (!api) return
-  // streaming tracks have no local file, and their terms may forbid stem separation
   if (track.source || track.stemsAllowed === false) return
   if (!userDataDir) {
     try {
@@ -167,14 +264,15 @@ async function enhanceWithSidecar(track: Track): Promise<void> {
       return
     }
   }
-  log(`analyzing "${track.name}" (sidecar: librosa bpm/key + demucs stems)…`)
+  const wantStems = !track.stems
+  log(`analyzing "${track.name}" (${wantStems ? 'stems + metadata' : 'metadata'} via sidecar)…`)
   const started = performance.now()
   const r = await api.analyze(track.path, {
-    stems: true,
+    stems: wantStems,
     stemsDir: `${userDataDir}/stems/${slug(track.id)}`
   })
   if (!r.ok || !r.result) {
-    log('sidecar analysis unavailable — click "install analysis env" in the header for better BPM/key/stems')
+    log('sidecar analysis unavailable — click "install analysis env" / "+ stems" in the header')
     return
   }
   const res = r.result as {
@@ -185,13 +283,17 @@ async function enhanceWithSidecar(track: Track): Promise<void> {
     stems?: Record<string, string>
     stems_error?: string
   }
+  let gridChanged = false
   if (typeof res.bpm === 'number' && res.bpm > 0 && track.analysisSource !== 'manual') {
+    const prevBpm = track.grid?.bpm ?? 0
+    const prevOff = track.grid?.offset ?? 0
     track.grid = {
       ...(track.grid ?? {}),
       bpm: res.bpm,
       offset: res.offset ?? track.grid?.offset ?? 0
     }
     track.analysisSource = 'sidecar'
+    gridChanged = Math.abs(prevBpm - res.bpm) > 0.05 || Math.abs(prevOff - track.grid.offset) > 0.05
   }
   if (res.key) {
     track.key = res.key
@@ -213,12 +315,18 @@ async function enhanceWithSidecar(track: Track): Promise<void> {
   }
   for (const d of [engine.deckA, engine.deckB]) {
     if (d.track?.id === track.id) {
+      if (gridChanged && d.audioBuffer) {
+        const { sections, vibe } = analyzeStructure(d.audioBuffer, track.grid)
+        track.sections = sections
+        track.vibe = vibe
+      }
       updateDeckMeta(d)
       wfFor(d).markDirty()
     }
   }
   crate.upsert(track)
   renderCrate()
+  renderCopilot()
   log(`analyzed "${track.name}" in ${((performance.now() - started) / 1000).toFixed(1)}s${track.key ? ` — ${track.key}` : ''}`)
 }
 
@@ -226,6 +334,10 @@ async function attachStems(deck: Deck, track: Track): Promise<void> {
   try {
     const bufs = await loadStemBuffers(track)
     if (deck.track?.id !== track.id) return
+    if (bufs.length === 4 && track.sections?.length) {
+      annotateVocals(track.sections, bufs[3]) // index 3 = vocals
+      crate.upsert(track)
+    }
     deck.setStemBuffers(bufs)
     wfFor(deck).setStems(bufs)
     deck.releaseMainMix() // stems replace the mix: free ~106 MB per 5-min track
@@ -233,6 +345,7 @@ async function attachStems(deck: Deck, track: Track): Promise<void> {
     updateStemsUI(deck)
     syncWaveformModeButtons(deck)
     audioMem.track(track.id, track.name, AudioMemory.bytesOf(...bufs))
+    renderCopilot()
   } catch (e) {
     log(`stem load failed: ${String(e)}`)
   }
@@ -261,20 +374,27 @@ function refFromTrack(t: Track): StreamTrackRef {
   }
 }
 
-async function loadTrackIntoDeck(track: Track, buffer?: AudioBuffer): Promise<void> {
+async function loadTrackIntoDeck(
+  track: Track,
+  buffer?: AudioBuffer,
+  opts: { targetDeck?: Deck; cueAtSec?: number } = {}
+): Promise<Deck | null> {
   if (recorder.recording && track.source === 'soundcloud') {
     stopRecording('recording stopped — a streamed track was loaded (SoundCloud terms)')
   }
-  const deck = !engine.deckA.hasAudio
-    ? engine.deckA
-    : !engine.deckB.hasAudio
-      ? engine.deckB
-      : focusedDeck === 'B'
+  const deck =
+    opts.targetDeck ??
+    (!engine.deckA.hasAudio
+      ? engine.deckA
+      : !engine.deckB.hasAudio
         ? engine.deckB
-        : engine.deckA
+        : focusedDeck === 'B'
+          ? engine.deckB
+          : engine.deckA)
   releaseSyncIfSlave(deck)
   try {
     let buf = buffer
+    let tags: AudioTags = {}
     if (!buf) {
       if (track.source === 'soundcloud') {
         const r = await sc.resolve(refFromTrack(track))
@@ -282,10 +402,25 @@ async function loadTrackIntoDeck(track: Track, buffer?: AudioBuffer): Promise<vo
         buf = r.buffer
         registerSCMemory(track.path, track.name, buf)
       } else {
-        buf = await decodePath(track.path)
+        const dec = await decodePathWithTags(track.path)
+        buf = dec.buffer
+        tags = dec.tags
       }
     }
+
+    // Backfill Serato/ID3 tags, arrangement & vibe for older crate entries
+    const hadTags = !!tags.bpm || !!tags.key
+    if (hadTags) applyTagsToTrack(track, tags)
+    if (!track.sections?.length || !track.vibe || hadTags) {
+      const { sections, vibe } = analyzeStructure(buf, track.grid)
+      track.sections = sections
+      track.vibe = vibe
+    }
+
     const stemBufs = track.stems ? await loadStemBuffers(track) : []
+    if (stemBufs.length === 4 && track.sections?.length) {
+      annotateVocals(track.sections, stemBufs[3])
+    }
     await deck.load(track, buf, stemBufs)
     const wf = wfFor(deck)
     wf.setBuffer(buf)
@@ -301,8 +436,9 @@ async function loadTrackIntoDeck(track: Track, buffer?: AudioBuffer): Promise<vo
     if (track.gainDb == null) {
       track.lufs = computeLoudness(buf)
       track.gainDb = autoGainDb(track.lufs)
-      crate.upsert(track)
     }
+    crate.upsert(track)
+    renderCrate()
     if (autoGain && track.gainDb != null) {
       deck.setTrim(track.gainDb)
       const r = deckRefs(deck)
@@ -312,12 +448,27 @@ async function loadTrackIntoDeck(track: Track, buffer?: AudioBuffer): Promise<vo
           (isFinite(track.lufs ?? NaN) ? ` (track ${(track.lufs as number).toFixed(1)} LUFS → ${TARGET_LUFS})` : '')
       )
     }
+    if (opts.cueAtSec != null && opts.cueAtSec >= 0) {
+      deck.seek(opts.cueAtSec)
+      deck.setCueHere()
+      wf.markDirty()
+    }
     updateDeckUI(deck)
     updateStemsUI(deck)
     syncWaveformModeButtons(deck)
+    updateStemsButtons()
+    renderCopilot()
+
+    // Auto-queue stems on loaded local tracks whenever demucs is available
+    if (!track.stems && !track.source && track.stemsAllowed !== false && envHasDemucs) {
+      queueSidecar(track)
+    }
+
     log(`loaded "${track.name}" → deck ${deck.id}`)
+    return deck
   } catch (e) {
     log(`could not load "${track.name}": ${String(e)}`)
+    return null
   }
 }
 
@@ -336,6 +487,19 @@ function releaseSyncIfSlave(deck: Deck): void {
     syncCtl.disengage()
     log(`deck ${deck.id} sync lock released (manual control)`)
   }
+}
+
+function recomputeArrangement(deck: Deck): void {
+  const t = deck.track
+  if (!t || !t.grid) return
+  if (deck.audioBuffer) {
+    const { sections, vibe } = analyzeStructure(deck.audioBuffer, t.grid)
+    t.sections = sections
+    t.vibe = vibe
+  }
+  persistTrack(deck)
+  wfFor(deck).markDirty()
+  renderCopilot()
 }
 
 function actionPress(action: string): void {
@@ -425,22 +589,15 @@ function actionPress(action: string): void {
       }
       case 'setBar1':
         if (deck.setDownbeatHere()) {
-          persistTrack(deck)
-          wfFor(deck).markDirty()
+          recomputeArrangement(deck)
           log(`deck ${deck.id} Bar 1 anchored @ ${fmtTime(deck.audiblePosition)}`)
         }
         break
       case 'beatLeft':
-        if (deck.shiftDownbeat(-1)) {
-          persistTrack(deck)
-          wfFor(deck).markDirty()
-        }
+        if (deck.shiftDownbeat(-1)) recomputeArrangement(deck)
         break
       case 'beatRight':
-        if (deck.shiftDownbeat(1)) {
-          persistTrack(deck)
-          wfFor(deck).markDirty()
-        }
+        if (deck.shiftDownbeat(1)) recomputeArrangement(deck)
         break
       case 'nudgeBack':
         if (deck.nudgeGrid(-0.01)) {
@@ -457,9 +614,8 @@ function actionPress(action: string): void {
       case 'bpmHalf': {
         const next = deck.scaleBpm(0.5)
         if (next != null) {
-          persistTrack(deck)
+          recomputeArrangement(deck)
           updateDeckMeta(deck)
-          wfFor(deck).markDirty()
           renderCrate()
           log(`deck ${deck.id} BPM halved → ${next.toFixed(1)}`)
         }
@@ -468,9 +624,8 @@ function actionPress(action: string): void {
       case 'bpmDouble': {
         const next = deck.scaleBpm(2)
         if (next != null) {
-          persistTrack(deck)
+          recomputeArrangement(deck)
           updateDeckMeta(deck)
-          wfFor(deck).markDirty()
           renderCrate()
           log(`deck ${deck.id} BPM doubled → ${next.toFixed(1)}`)
         }
@@ -478,8 +633,7 @@ function actionPress(action: string): void {
       }
       case 'beatsPerBar': {
         const bpb = deck.cycleBeatsPerBar()
-        persistTrack(deck)
-        wfFor(deck).markDirty()
+        recomputeArrangement(deck)
         log(`deck ${deck.id} measure = ${bpb}/4`)
         break
       }
@@ -723,29 +877,52 @@ document.addEventListener('drop', (e) => {
 })
 
 async function addFiles(files: File[]): Promise<void> {
-  for (const f of files) {
+  const valid = files.filter((f) => {
     if (!AUDIO_EXT.test(f.name)) {
       log(`skipped ${f.name} (unsupported type)`)
-      continue
+      return false
     }
+    return true
+  })
+  const batch = valid.length >= 3
+  if (batch) log(`batch importing ${valid.length} tracks (ID3/Serato tags + arrangement + vibe)…`)
+  for (const f of valid) {
     try {
-      const buffer = await decodeFile(f)
+      const { buffer, tags } = await decodeFileWithTags(f)
       const path = window.vibedeck?.filePathFor(f) ?? f.name
-      await ingest(path, f.name.replace(/\.[^.]+$/, ''), buffer)
+      const shouldLoad = !batch || !engine.deckA.hasAudio || !engine.deckB.hasAudio
+      await ingest(path, f.name.replace(/\.[^.]+$/, ''), buffer, tags, {
+        loadIntoDeck: shouldLoad,
+        runStems: !batch
+      })
     } catch (e) {
       log(`failed to load ${f.name}: ${String(e)}`)
     }
   }
+  if (batch) {
+    renderCopilot()
+    log(`batch import done — ${valid.length} tracks ready in crate + Co-Pilot`)
+  }
 }
 
 async function addPaths(paths: string[]): Promise<void> {
+  const batch = paths.length >= 3
+  if (batch) log(`batch importing ${paths.length} tracks (ID3/Serato tags + arrangement + vibe)…`)
   for (const p of paths) {
     try {
-      const buffer = await decodePath(p)
-      await ingest(p, basename(p).replace(/\.[^.]+$/, ''), buffer)
+      const { buffer, tags } = await decodePathWithTags(p)
+      const shouldLoad = !batch || !engine.deckA.hasAudio || !engine.deckB.hasAudio
+      await ingest(p, basename(p).replace(/\.[^.]+$/, ''), buffer, tags, {
+        loadIntoDeck: shouldLoad,
+        runStems: !batch
+      })
     } catch (e) {
       log(`failed to load ${basename(p)}: ${String(e)}`)
     }
+  }
+  if (batch) {
+    renderCopilot()
+    log(`batch import done — ${paths.length} tracks ready in crate + Co-Pilot`)
   }
 }
 
@@ -829,6 +1006,21 @@ function updateFilterLabel(r: DeckRefs, v: number): void {
   lab.classList.toggle('hp', v > 0.04)
 }
 
+function updateStemsButtons(): void {
+  for (const deck of [engine.deckA, engine.deckB]) {
+    const r = deckRefs(deck)
+    const t = deck.track
+    const eligible = !!t && !t.stems && !t.source && t.stemsAllowed !== false
+    r.getStemsBtn.hidden = !eligible
+    if (eligible && t) {
+      const running = sidecarBusyId === t.id
+      const queued = sidecarQueuedIds.has(t.id)
+      r.getStemsBtn.disabled = running || queued
+      r.getStemsBtn.textContent = running ? 'STEMS…' : queued ? 'QUEUED' : 'GET STEMS'
+    }
+  }
+}
+
 function updateDeckMeta(deck: Deck): void {
   const r = deckRefs(deck)
   const t = deck.track
@@ -861,7 +1053,10 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   waveforms.set(deck.id, wf)
 
   r.root.addEventListener('pointerdown', () => {
-    focusedDeck = deck.id
+    if (focusedDeck !== deck.id) {
+      focusedDeck = deck.id
+      renderCopilot()
+    }
   })
 
   const resetRate = () => {
@@ -889,6 +1084,31 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   }
   r.zoomOutBtn.addEventListener('click', () => wf.setZoom(wf.zoomSec * 1.4))
   r.zoomInBtn.addEventListener('click', () => wf.setZoom(wf.zoomSec * 0.72))
+
+  r.autoCuesBtn.addEventListener('click', () => {
+    const secs = deck.track?.sections
+    if (!secs?.length) {
+      log(`deck ${deck.id}: no arrangement detected yet`)
+      return
+    }
+    const picked = pickAutoCues(secs)
+    for (let i = 0; i < 4; i++) deck.hotCues[i] = picked[i]
+    if (deck.track) deck.track.hotCues = [...picked]
+    persistTrack(deck)
+    wf.markDirty()
+    log(`deck ${deck.id}: auto-set hot cues on Intro / Drop / Break`)
+  })
+
+  r.getStemsBtn.addEventListener('click', () => {
+    const t = deck.track
+    if (!t) return
+    if (!envHasDemucs) {
+      log('stems require demucs — click "+ stems" in the top bar first')
+      return
+    }
+    queueSidecar(t)
+    log(`queued stem separation for "${t.name}"`)
+  })
 
   const eqs = [r.eqLow, r.eqMid, r.eqHigh]
   const applyEq = () => deck.setEQ(eqs[0].valueAsNumber, eqs[1].valueAsNumber, eqs[2].valueAsNumber)
@@ -1134,12 +1354,17 @@ let lastSyncUpdate = 0
 let lastFxBpmUpdate = 0
 let lastMemUpdate = 0
 let lastMemEnforce = 0
+let lastCopilotUpdate = 0
 
 function tick(): void {
   const now = performance.now()
   if (now - lastSyncUpdate > 200) {
     lastSyncUpdate = now
     syncCtl.update()
+  }
+  if (now - lastCopilotUpdate > 1500) {
+    lastCopilotUpdate = now
+    if (engine.deckA.playing || engine.deckB.playing) renderCopilot()
   }
   if (now - lastMemUpdate > 1000) {
     lastMemUpdate = now
@@ -1196,6 +1421,19 @@ function tick(): void {
 
     const bb = deck.barBeat
     r.barBeat.textContent = bb ? `BAR ${bb.bar}.${bb.beat}` : '—'
+    const cd = deck.sectionCountdown
+    if (cd) {
+      r.phraseCd.hidden = false
+      const pal = SECTION_COLORS[cd.current.label]
+      r.phraseCd.style.background = pal.bg
+      r.phraseCd.style.color = pal.fg
+      r.phraseCd.style.borderColor = pal.border
+      r.phraseCd.textContent = cd.next
+        ? `${cd.current.label} → ${cd.next.label} in ${cd.barsLeft}.${cd.beatsLeft}`
+        : `${cd.current.label} · ${cd.barsLeft}.${cd.beatsLeft} left`
+    } else {
+      r.phraseCd.hidden = true
+    }
     const pos = deck.audiblePosition
     r.pos.textContent = fmtTime(pos)
     r.rem.textContent = `-${fmtTime(Math.max(0, deck.duration - pos))}`
@@ -1469,6 +1707,137 @@ refs.midiWizard.addEventListener('click', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Co-Pilot panel: Top-5 Next Up curation + 5-point Transition Recipe
+// ---------------------------------------------------------------------------
+
+function setCopilotTab(tab: 'copilot' | 'stream'): void {
+  const isCo = tab === 'copilot'
+  refs.tabCopilot.classList.toggle('active', isCo)
+  refs.tabStream.classList.toggle('active', !isCo)
+  refs.copilotPane.hidden = !isCo
+  refs.streamPane.hidden = isCo
+  const vibeBox = refs.vibeBtns[0]?.parentElement
+  if (vibeBox) vibeBox.hidden = !isCo
+}
+
+refs.tabCopilot.addEventListener('click', () => setCopilotTab('copilot'))
+refs.tabStream.addEventListener('click', () => setCopilotTab('stream'))
+
+refs.vibeBtns.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    vibeMode = (btn.dataset.vibe as VibeMode) ?? 'flow'
+    refs.vibeBtns.forEach((b) => b.classList.toggle('active', b === btn))
+    renderCopilot()
+  })
+})
+
+/** Determine which deck is currently leading (outgoing) and which is incoming. */
+function activeDeckPair(): { out: Deck; inc: Deck } {
+  const a = engine.deckA
+  const b = engine.deckB
+  if (a.playing && !b.playing) return { out: a, inc: b }
+  if (b.playing && !a.playing) return { out: b, inc: a }
+  if (a.playing && b.playing) return engine.mixer.position <= 0.5 ? { out: a, inc: b } : { out: b, inc: a }
+  if (focusedDeck === 'B' && b.track) return { out: b, inc: a }
+  if (a.track) return { out: a, inc: b }
+  return { out: b, inc: a }
+}
+
+function renderCopilot(): void {
+  const { out, inc } = activeDeckPair()
+
+  // 1. Live Transition Plan card (when both decks have tracks)
+  if (out.track && inc.track) {
+    const plan = planTransition(
+      out.track,
+      out.audiblePosition,
+      out.effectiveBpm ?? out.track.grid?.bpm ?? 120,
+      inc.track,
+      out.stemCount > 0,
+      inc.stemCount > 0
+    )
+    const harmCls = plan.harmonic.compatible ? '' : ' clash'
+    const pitchStr = `${plan.pitchPct >= 0 ? '+' : ''}${plan.pitchPct.toFixed(1)}%`
+    refs.planBox.innerHTML = `
+      <div class="plan-head">
+        <span>${out.id} → ${inc.id}</span>
+        <span class="next-harm${harmCls}">${escapeHtml(plan.harmonic.tag)}</span>
+        <span class="next-pitch">${escapeHtml(pitchStr)}</span>
+        <button class="plan-prep" title="Jump deck ${inc.id} to mix-in cue & set CUE">PREP ${inc.id}</button>
+      </div>
+      ${plan.vocalWarning ? `<div class="plan-vox">⚠ ${escapeHtml(plan.vocalWarning)}</div>` : ''}
+      <div class="plan-grid">
+        <span><b>OUT</b>${escapeHtml(plan.outCueLabel)}</span>
+        <span><b>IN</b>${escapeHtml(plan.inCueLabel)}</span>
+        <span><b>LOOP</b>${escapeHtml(plan.loopNote)}</span>
+        <span><b>FLT</b>${escapeHtml(plan.filterNote)}</span>
+        <span><b>KICK</b>${escapeHtml(plan.kickOwner)}</span>
+        <span><b>MIX</b>${escapeHtml(plan.stemNote)}</span>
+      </div>`
+    refs.planBox.querySelector('.plan-prep')?.addEventListener('click', () => {
+      releaseSyncIfSlave(inc)
+      inc.seek(plan.inCueSec)
+      inc.setCueHere()
+      persistTrack(inc)
+      wfFor(inc).markDirty()
+      log(`co-pilot: prepped deck ${inc.id} cue @ ${plan.inCueLabel}`)
+    })
+  } else if (out.track) {
+    refs.planBox.innerHTML = `<div class="plan-empty">Deck ${out.id} active (${out.track.grid?.bpm.toFixed(1) ?? '?'} BPM · ${out.track.camelot ?? 'no key'}) — click any Next Up track below to load & cue on Deck ${inc.id}</div>`
+  } else {
+    refs.planBox.innerHTML =
+      '<div class="plan-empty">Drop tracks (or drag a whole crate folder) to unlock Top-5 Next Up curation & transition plans.</div>'
+  }
+
+  // 2. Top-5 Next-Up recommendations from crate
+  refs.nextList.innerHTML = ''
+  if (!out.track) return
+  const exclude = new Set<string>([out.track.id])
+  if (inc.track) exclude.add(inc.track.id)
+  const picks = recommendNext(
+    out.track,
+    out.effectiveBpm ?? out.track.grid?.bpm ?? 0,
+    crate.tracks,
+    exclude,
+    vibeMode,
+    5
+  )
+  if (picks.length === 0) {
+    const li = document.createElement('li')
+    li.innerHTML = '<span class="plan-empty">Add more tracks to your crate for Top-5 picks.</span>'
+    refs.nextList.append(li)
+    return
+  }
+
+  for (const p of picks) {
+    const li = document.createElement('li')
+    const camCol = camelotColor(p.track.camelot) ?? '#94a3b8'
+    const pitchStr = `${p.pitchPct >= 0 ? '+' : ''}${p.pitchPct.toFixed(1)}%${p.halfDouble ? ` ${p.halfDouble}` : ''}`
+    const harmCls = p.harmonic.compatible ? '' : ' clash'
+    li.innerHTML = `
+      <span class="next-score">${p.score}%</span>
+      <span class="next-name">${escapeHtml(p.track.name)}</span>
+      ${p.track.camelot ? `<span class="crate-key" style="background:${camCol}">${escapeHtml(p.track.camelot)}</span>` : ''}
+      <span class="next-harm${harmCls}">${escapeHtml(p.harmonic.tag)}</span>
+      <span class="next-pitch">${escapeHtml(pitchStr)}</span>
+      <span class="next-hint">${escapeHtml(p.quickMove)}</span>`
+    li.title = `${p.track.name} · ${p.track.grid?.bpm.toFixed(1) ?? '?'} BPM · ${p.vibeNote} · Click to load & cue on Deck ${inc.id}`
+    li.addEventListener('click', () => {
+      const plan = planTransition(
+        out.track!,
+        out.audiblePosition,
+        out.effectiveBpm ?? out.track!.grid?.bpm ?? 120,
+        p.track,
+        out.stemCount > 0,
+        !!p.track.stems
+      )
+      void loadTrackIntoDeck(p.track, undefined, { targetDeck: inc, cueAtSec: plan.inCueSec })
+    })
+    refs.nextList.append(li)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // SoundCloud stream panel
 // ---------------------------------------------------------------------------
 
@@ -1558,6 +1927,9 @@ async function addStreamTrack(ref: StreamTrackRef): Promise<void> {
       analysisSource: 'browser'
     }
     track.grid = computeBeatGrid(buffer)
+    const { sections, vibe } = analyzeStructure(buffer, track.grid)
+    track.sections = sections
+    track.vibe = vibe
     track.pcmBytes = AudioMemory.bytesOf(buffer)
     registerSCMemory(ref.id, track.name, buffer)
     crate.upsert(track)
@@ -1576,12 +1948,14 @@ async function addStreamTrack(ref: StreamTrackRef): Promise<void> {
 async function refreshEnvStatus(): Promise<void> {
   const s = await window.vibedeck?.envStatus()
   if (!s) return
+  envHasDemucs = s.demucs
   const showSetup = !s.librosa || (!s.demucs && !s.installing)
   refs.envSetup.hidden = !showSetup
   refs.envInstallBtn.hidden = s.librosa
   refs.envInstallStemsBtn.hidden = s.demucs
   refs.envInstallBtn.disabled = s.installing
   refs.envInstallStemsBtn.disabled = s.installing
+  updateStemsButtons()
   if (s.librosa && s.demucs) log('analysis env ready (librosa + demucs)')
 }
 
@@ -1624,6 +1998,7 @@ void (async () => {
   renderMidiPanel()
   await restoreSampler()
   await refreshEnvStatus()
+  renderCopilot()
   await sc.refreshStatus()
   updateStreamPanel()
   if (sc.configured && !sc.loggedIn) {
