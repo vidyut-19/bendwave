@@ -1,7 +1,7 @@
 {
-  "name": "vibedeck",
-  "version": "1.4.0",
-  "description": "A vibe-coded, stem-aware DJ tool: two Web Audio decks, beatgrids, auto-sync, keyboard + MIDI control.",
+  "name": "bendwave",
+  "version": "1.5.0",
+  "description": "bendwave — a Teenage Engineering & Boeing 737 cockpit-inspired, stem-aware DJ instrument with acoustic fingerprinting, graph set planning, and live automated transitions.",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
@@ -15,8 +15,8 @@
     "dist:dir": "npm run build && electron-builder --mac --dir"
   },
   "build": {
-    "appId": "com.vidyut19.vibedeck",
-    "productName": "vibedeck",
+    "appId": "com.vidyut19.bendwave",
+    "productName": "bendwave",
     "directories": {
       "output": "release"
     },

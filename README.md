@@ -1,28 +1,37 @@
-# vibedeck
+# bendwave
 
 **→ Zero-to-mixing guide: [QUICKSTART.md](QUICKSTART.md)** — run the app, wire the
 K.O. II + headphones rig, first mix in 60 seconds.
 
-A vibe-coded, stem-aware DJ tool. Two Web Audio decks, automatic beatgrids, tempo + phase
-auto-sync, keyboard control, and MIDI-learn for anything with pads and faders — built with a
-Teenage Engineering K.O. II in mind, but happy with any class-compliant USB MIDI controller.
+A Teenage Engineering & Boeing 737 cockpit-inspired, stem-aware two-deck DJ instrument.
+Pure deterministic local DSP (no cloud latency): deep acoustic fingerprinting, graph-theoretic
+set path planning, live automated transition curves with touch-to-override, native macOS
+Touch Bar DJ strip, and class-compliant USB MIDI control (EP–133 K.O. II preset + assignable
+fader strip).
 
-## What works today (v1.2)
+## What works today (v1.5)
 
+- **Deep Acoustic Fingerprint & Graph Set Path Planner (`((SET PLAN))`)**: 60 ms pure-TS DSP
+  extracts 13-dim MFCC timbre, peak sub frequency (`43Hz 808` vs `54Hz SUB`), 16-step low-end
+  groove (`4OTF` / `TRAP/HALF` / `SYNCOPATED`), swing, loudness-normalized energy, and
+  energy-gated `∅` drum intros/outros. Solves no-repeat set arcs (`ARC`, `CLIMB`, `2-PEAK`)
+  via Beam Search + 2-opt with crate clusters and `BRG` bridge tracks.
+- **Live Automated Transition Curves (`((CO-PILOT))`)**: 6 executable curve strategies
+  (`BASS SWAP`, `HPF + ECHO`, `LPF IN`, `X-FILTER`, `STEM ∅`, `STEM BLEND`) with live
+  visual envelopes and instant touch-to-override on any knob, fader, MIDI CC, or Touch Bar.
+- **Boeing 737 Cockpit Rotary Knobs & 13" Smart Overlays**: 3 shape-coded SVG rotary knob
+  archetypes (`EFIS 4-Lobe`, `Overhead Wedge`, `EFIS 8-Scallop`) with center detents,
+  proportional MacBook Force Touch trackpad gliding, right-click EQ isolator kill switches,
+  and a native macOS Touch Bar live tuning strip (`DECK A/B`, `LO/FLT/VOL/MID/HI/XF`,
+  `0` snap, `KILL`).
 - **Instant Arrangement & Phrase Countdown**: bar-synchronous song structure analyzer
-  runs in <30ms on load — renders a color-coded Arrangement Ribbon (`INTRO`, `GROOVE`,
-  `BREAK`, `BUILD`, `DROP`, `OUTRO`, plus `♪` vocal badges once stems finish) directly
-  above the overview strip (click any block to jump), shows a live **`BUILD → DROP in 2.3`**
-  countdown in the HUD, and powers one-click **`AUTO CUES`** (Hot Cues 1–4 on Intro /
-  Drop 1 / Break / Drop 2).
-- **DJ Co-Pilot (Next Up + Transition Recipes)**: ranks the **Top 5 next tracks** from
-  your crate by Camelot harmonic compatibility (`MATCH`, `+1 LIFT`, `-1 COOL`, `REL`,
-  `+2 BOOST`), tempo fit (incl. half/double-time), and vibe (`FLOW` / `LIFT` / `CHILL`).
-  Computes a live **5-point Transition Plan** between decks (mix-in/out cues, 4B/8B loop
-  suggestion, HPF/LPF move, kick/drums owner, stem blend strategy, and vocal-clash warnings)
-  with one-click **`PREP`** cueing.
-- **Instant Serato / ID3 Tag Reader**: reads embedded `Serato BeatGrid` (exact downbeat +
-  BPM), `TBPM`, and `TKEY` (verified Camelot wheel) right in the browser at drop time —
+  renders a color-coded Arrangement Ribbon (`INTRO`, `GROOVE`, `BREAK`, `BUILD`, `DROP`,
+  `OUTRO`, plus `♪` vocal badges once stems finish) directly above the overview strip (click
+  any block to jump), floats a live **`BUILD → DROP in 2.3`** pill cleanly over the waveform,
+  and powers one-click **`AUTO CUES`** (Hot Cues 1–4).
+- **Instant Serato / ID3 Tag Reader + Recursive Folder Drop**: reads embedded `Serato BeatGrid`
+  (exact downbeat + BPM), `TBPM`, and `TKEY` right at drop time — drag an entire folder straight
+  from Finder.
   and supports fast batch crate drops (e.g. dropping 25+ MP3s at once populates the crate
   and Co-Pilot in seconds, with a 1-at-a-time Demucs stem queue).
 - **Timing & Harmony HUD**: top-of-deck readout shows live BPM, original track BPM (`ORIG`),

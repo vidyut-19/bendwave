@@ -203,7 +203,7 @@ async function scLogin(): Promise<{ ok: boolean; error?: string; username?: stri
       }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       res.end(
-        '<html><body style="background:#111;color:#eee;font-family:ui-monospace,monospace;padding:40px"><h2>vibedeck ✓ connected to SoundCloud</h2><p>You can close this tab.</p></body></html>'
+        '<html><body style="background:#111;color:#eee;font-family:ui-monospace,monospace;padding:40px"><h2>bendwave ✓ connected to SoundCloud</h2><p>You can close this tab.</p></body></html>'
       )
       server.close()
       if (u.searchParams.get('state') !== state) reject(new Error('OAuth state mismatch — aborting'))

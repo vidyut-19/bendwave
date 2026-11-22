@@ -1030,7 +1030,16 @@ document.addEventListener('dragover', (e) => {
 document.addEventListener('dragend', hideDropOverlay)
 document.addEventListener('pointerdown', hideDropOverlay, { capture: true })
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') hideDropOverlay()
+  if (e.key === 'Escape') {
+    hideDropOverlay()
+    for (const r of [refs.deckA, refs.deckB]) {
+      if (!r.gridPopover.hidden) {
+        r.gridPopover.hidden = true
+        r.gridToggleBtn.classList.remove('active')
+        r.gridToggleBtn.textContent = 'GRID ▾'
+      }
+    }
+  }
 })
 window.addEventListener('blur', () => {
   hideDropOverlay()
@@ -1347,6 +1356,13 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   }
   r.zoomOutBtn.addEventListener('click', () => wf.setZoom(wf.zoomSec * 1.4))
   r.zoomInBtn.addEventListener('click', () => wf.setZoom(wf.zoomSec * 0.72))
+
+  r.gridToggleBtn.addEventListener('click', () => {
+    const open = r.gridPopover.hidden
+    r.gridPopover.hidden = !open
+    r.gridToggleBtn.classList.toggle('active', open)
+    r.gridToggleBtn.textContent = open ? 'GRID ▴' : 'GRID ▾'
+  })
 
   r.autoCuesBtn.addEventListener('click', () => {
     const secs = deck.track?.sections
@@ -2481,7 +2497,8 @@ function renderPlanner(): void {
 
 function updateStreamPanel(): void {
   if (!sc.configured) {
-    refs.streamStatus.textContent = 'not configured'
+    refs.streamStatus.textContent = ''
+    refs.tabStream.title = 'SoundCloud not configured — click to see setup instructions'
     refs.scConnect.textContent = 'setup…'
     refs.scConnect.disabled = true
     return

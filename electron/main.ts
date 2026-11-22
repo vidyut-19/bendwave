@@ -127,12 +127,12 @@ ipcMain.on(
 
 function createWindow(): void {
   win = new BrowserWindow({
-    width: 1440,
-    height: 920,
-    minWidth: 1180,
-    minHeight: 740,
+    width: 1400,
+    height: 860,
+    minWidth: 1120,
+    minHeight: 700,
     backgroundColor: '#090b0f',
-    title: 'vibedeck',
+    title: 'bendwave',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -147,7 +147,39 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+/** Preserve existing vibedeck crate, stems & Python Demucs venv seamlessly after rename to bendwave. */
+async function migrateLegacyUserData(): Promise<void> {
+  try {
+    const cur = app.getPath('userData')
+    const legacy = path.join(path.dirname(cur), 'vibedeck')
+    if (cur === legacy) return
+    try {
+      await fs.access(legacy)
+    } catch {
+      return
+    }
+    await fs.mkdir(cur, { recursive: true })
+    // Copy crate.json if bendwave has none yet
+    const curCrate = path.join(cur, 'crate.json')
+    const oldCrate = path.join(legacy, 'crate.json')
+    if (!(await fileExists(curCrate)) && (await fileExists(oldCrate))) {
+      await fs.copyFile(oldCrate, curCrate)
+    }
+    // Symlink heavy folders (pyenv ~2GB & stems cache) so zero re-install / zero duplicate disk space
+    for (const sub of ['pyenv', 'stems', 'soundcloud.json', 'soundcloud-tokens.bin']) {
+      const dst = path.join(cur, sub)
+      const src = path.join(legacy, sub)
+      if (!(await fileExists(dst)) && (await fileExists(src))) {
+        await fs.symlink(src, dst)
+      }
+    }
+  } catch {
+    /* best-effort migration */
+  }
+}
+
+app.whenReady().then(async () => {
+  await migrateLegacyUserData()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -260,10 +292,10 @@ let recPos = 0
 ipcMain.handle('rec:start', async () => {
   try {
     if (recFd) return { ok: false, error: 'already recording' }
-    const dir = path.join(app.getPath('music'), 'vibedeck')
+    const dir = path.join(app.getPath('music'), 'bendwave')
     await fs.mkdir(dir, { recursive: true })
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-    recPath = path.join(dir, `vibedeck-set-${ts}.wav`)
+    recPath = path.join(dir, `bendwave-set-${ts}.wav`)
     recFd = await fs.open(recPath, 'w')
     await recFd.write(wavHeader(0, 48000), 0) // placeholder, patched on finish
     recPos = 44

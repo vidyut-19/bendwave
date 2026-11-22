@@ -22,6 +22,8 @@ export interface DeckRefs {
   waveform: HTMLCanvasElement
   bpbBtn: HTMLButtonElement
   phraseBtn: HTMLButtonElement
+  gridToggleBtn: HTMLButtonElement
+  gridPopover: HTMLElement
   autoCuesBtn: HTMLButtonElement
   getStemsBtn: HTMLButtonElement
   wfRgbBtn: HTMLButtonElement
@@ -137,8 +139,6 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
     <span class="reel-indicator" title="Deck transport spin">${ICO_REEL}</span>
     <span class="track-name">— empty deck —</span>
     <span class="deck-status" hidden></span>
-    <span class="fp-tags" hidden title="Acoustic fingerprint: sub anatomy · groove · swing"></span>
-    <span class="phrase-cd" hidden title="Current section & bars.beats until next transition"></span>
     <span class="bar-beat" title="Current Bar.Beat from Measure 1">—</span>
     <span class="time-group">
       <span class="pos">0:00.0</span>
@@ -186,20 +186,6 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
     </div>
 
     <div class="grid-bar">
-      <div class="grid-group">
-        <span class="bar-label">((GRID))</span>
-        <button class="mini-btn accent-gold" data-act="deck${id}.setBar1" title="Anchor Bar 1, Beat 1 at current playhead">${ICO_FLAG} 1</button>
-        <button class="mini-btn" data-act="deck${id}.beatLeft" title="Shift measure downbeat 1 beat earlier">◀1</button>
-        <button class="mini-btn" data-act="deck${id}.beatRight" title="Shift measure downbeat 1 beat later">1▶</button>
-        <button class="mini-btn" data-act="deck${id}.nudgeBack" title="Nudge beatgrid -10ms">-ms</button>
-        <button class="mini-btn" data-act="deck${id}.nudgeFwd" title="Nudge beatgrid +10ms">+ms</button>
-        <button class="mini-btn" data-act="deck${id}.bpmHalf" title="Halve BPM">½×</button>
-        <button class="mini-btn" data-act="deck${id}.bpmDouble" title="Double BPM">2×</button>
-        <button class="mini-btn bpb-btn" data-act="deck${id}.beatsPerBar" title="Beats per measure">4/4</button>
-        <button class="mini-btn phrase-btn" data-act="deck${id}.phraseBars" title="Phrase block size on overview">8B</button>
-        <button class="mini-btn auto-cues-btn" title="Drop Hot Cues 1–4 onto Intro / Drop 1 / Break / Drop 2">AUTO CUES</button>
-        <button class="mini-btn get-stems-btn" hidden title="Separate Drums / Bass / Other / Vocals via Demucs">${ICO_STEMS} STEMS</button>
-      </div>
       <div class="grid-group wf-controls">
         <div class="seg-group" role="group" aria-label="Waveform mode">
           <button class="seg-btn wf-rgb active" title="Unified 3-band RGB frequency waveform">RGB</button>
@@ -210,10 +196,28 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
         <span class="zoom-val">10s</span>
         <button class="mini-btn zoom-in" title="Zoom in">+</button>
       </div>
+      <div class="grid-group">
+        <button class="mini-btn auto-cues-btn" title="Drop Hot Cues 1–4 onto Intro / Drop 1 / Break / Drop 2">AUTO CUES</button>
+        <button class="mini-btn get-stems-btn" hidden title="Separate Drums / Bass / Other / Vocals via Demucs">${ICO_STEMS} STEMS</button>
+        <button class="mini-btn grid-toggle-btn" title="Open beatgrid & measure editor">GRID ▾</button>
+      </div>
     </div>
 
     <div class="waveform-box" title="Close-up scrolling waveform — drag to scrub, wheel to zoom">
       <canvas class="waveform"></canvas>
+      <div class="grid-popover" hidden>
+        <button class="mini-btn accent-gold" data-act="deck${id}.setBar1" title="Anchor Bar 1, Beat 1 at current playhead">${ICO_FLAG} 1</button>
+        <button class="mini-btn" data-act="deck${id}.beatLeft" title="Shift measure downbeat 1 beat earlier">◀1</button>
+        <button class="mini-btn" data-act="deck${id}.beatRight" title="Shift measure downbeat 1 beat later">1▶</button>
+        <button class="mini-btn" data-act="deck${id}.nudgeBack" title="Nudge beatgrid -10ms">-ms</button>
+        <button class="mini-btn" data-act="deck${id}.nudgeFwd" title="Nudge beatgrid +10ms">+ms</button>
+        <button class="mini-btn" data-act="deck${id}.bpmHalf" title="Halve BPM">½×</button>
+        <button class="mini-btn" data-act="deck${id}.bpmDouble" title="Double BPM">2×</button>
+        <button class="mini-btn bpb-btn" data-act="deck${id}.beatsPerBar" title="Beats per measure">4/4</button>
+        <button class="mini-btn phrase-btn" data-act="deck${id}.phraseBars" title="Phrase block size on overview">8B</button>
+      </div>
+      <span class="phrase-cd wf-pill-tr" hidden title="Current section & bars.beats until next transition"></span>
+      <span class="fp-tags wf-pill-br" hidden title="Acoustic fingerprint: sub anatomy · groove · swing"></span>
     </div>
   </div>
 
@@ -256,7 +260,6 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
       <button class="hc hc2" data-act="deck${id}.hotcue2"><span class="hc-num">2</span><span class="hc-time">—</span></button>
       <button class="hc hc3" data-act="deck${id}.hotcue3"><span class="hc-num">3</span><span class="hc-time">—</span></button>
       <button class="hc hc4" data-act="deck${id}.hotcue4"><span class="hc-num">4</span><span class="hc-time">—</span></button>
-      <span class="hc-hint">⇧set · ⌥clr</span>
     </div>
 
     <div class="row loop-jump-row">
@@ -448,6 +451,8 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
     waveform: q('.waveform'),
     bpbBtn: q('.bpb-btn'),
     phraseBtn: q('.phrase-btn'),
+    gridToggleBtn: q('.grid-toggle-btn'),
+    gridPopover: q('.grid-popover'),
     autoCuesBtn: q('.auto-cues-btn'),
     getStemsBtn: q('.get-stems-btn'),
     wfRgbBtn: q('.wf-rgb'),
@@ -496,16 +501,16 @@ export function buildApp(root: HTMLElement): AppRefs {
   header.innerHTML = `
     <div class="brand">
       <span class="brand-tag">EP–133</span>
-      <h1>vibedeck</h1>
-      <span class="brand-ver">v1.4</span>
+      <h1>bendwave</h1>
+      <span class="brand-ver">v1.5</span>
     </div>
-    <span class="hint">drop tracks or folders anywhere · click arrangement blocks to jump</span>
+    <span class="header-spacer"></span>
     <span class="mem-meter"></span>
     <span class="env-setup" hidden>
       <button class="env-install">INSTALL ENV</button>
       <button class="env-install-stems" title="adds demucs + torch (~2 GB, one time)">+ STEMS</button>
     </span>
-    <button class="theme-btn" title="Switch chassis finish: EP–133 Putty / Dark Booth">DARK</button>`
+    <button class="theme-btn" title="Switch chassis finish: Putty / Dark Booth">DARK</button>`
   header.append(addBtn)
 
   const importBar = document.createElement('div')
@@ -534,11 +539,11 @@ export function buildApp(root: HTMLElement): AppRefs {
     <div class="mixer-toggles">
       <button class="t-btn split-cue" data-act="mix.splitCue" title="master on ch 1/2, headphone cue on ch 3/4">${ICO_PFL} SPLIT CUE</button>
       <button class="t-btn auto-gain" data-act="mix.autoGain" title="normalize tracks to ${-14} LUFS via trim on load">${ICO_GAIN} AUTO GAIN</button>
-      <button class="t-btn rec-btn" data-act="mix.record" title="record master bus to ~/Music/vibedeck/">${ICO_REC} REC</button>
+      <button class="t-btn rec-btn" data-act="mix.record" title="record master bus to ~/Music/bendwave/">${ICO_REC} REC</button>
     </div>
     <div class="mixer-knobs"></div>
-    <div class="sampler-box">
-      <div class="panel-title">((SAMPLER)) <span class="sampler-hint">drop · ⌥clr</span></div>
+    <div class="sampler-box" title="Drop audio files onto pads 1–8 · ⌥-click to clear">
+      <div class="panel-title">((SAMPLER))</div>
       <div class="sampler-pads">
         ${[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `<button class="smp" data-act="sampler.pad${n}">${n}</button>`).join('\n        ')}
       </div>
