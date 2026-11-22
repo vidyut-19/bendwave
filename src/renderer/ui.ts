@@ -1,6 +1,7 @@
 export interface DeckRefs {
   root: HTMLElement
   name: HTMLElement
+  fpTags: HTMLElement
   spinIcon: HTMLElement
   barBeat: HTMLElement
   phraseCd: HTMLElement
@@ -81,12 +82,19 @@ export interface AppRefs {
   midiWatch: HTMLButtonElement
   midiWizardStatus: HTMLElement
   tabCopilot: HTMLButtonElement
+  tabPlanner: HTMLButtonElement
   tabStream: HTMLButtonElement
   copilotPane: HTMLElement
+  plannerPane: HTMLElement
   streamPane: HTMLElement
   vibeBtns: HTMLButtonElement[]
   planBox: HTMLElement
   nextList: HTMLUListElement
+  arcBtns: HTMLButtonElement[]
+  planAltBtn: HTMLButtonElement
+  planBreakBtn: HTMLButtonElement
+  planSummary: HTMLElement
+  planList: HTMLUListElement
   streamStatus: HTMLElement
   scConnect: HTMLButtonElement
   scQuery: HTMLInputElement
@@ -104,7 +112,6 @@ const ICO_LOCK = `<svg class="ico" viewBox="0 0 12 12"><rect x="2.2" y="5.2" wid
 const ICO_SYNC = `<svg class="ico" viewBox="0 0 12 12"><path d="M1.5 6h9M3.8 3.5 1.5 6l2.3 2.5M8.2 3.5 10.5 6 8.2 8.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`
 const ICO_PFL = `<svg class="ico ico-md" viewBox="0 0 12 12"><path d="M2 7.5V6a4 4 0 0 1 8 0v1.5" fill="none" stroke="currentColor" stroke-width="1.35"/><rect x="1.4" y="6.6" width="2.3" height="3.8" fill="currentColor"/><rect x="8.3" y="6.6" width="2.3" height="3.8" fill="currentColor"/></svg>`
 const ICO_REEL = `<svg class="ico reel-svg" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="7" r="1.6" fill="currentColor"/><line x1="7" y1="1.8" x2="7" y2="4.4" stroke="currentColor" stroke-width="1.3"/><line x1="2.4" y1="9.6" x2="4.7" y2="8.3" stroke="currentColor" stroke-width="1.3"/><line x1="11.6" y1="9.6" x2="9.3" y2="8.3" stroke="currentColor" stroke-width="1.3"/></svg>`
-const ICO_LOOP = `<svg class="ico" viewBox="0 0 12 12"><path d="M2 7.5V4h7.5L7.5 2M10 4.5V8H2.5L4.5 10" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`
 const ICO_X = `<svg class="ico" viewBox="0 0 12 12"><path d="M3 3l6 6M9 3L3 9" stroke="currentColor" stroke-width="1.5"/></svg>`
 const ICO_ECHO = `<svg class="ico" viewBox="0 0 12 12"><circle cx="3" cy="6" r="2.2" fill="currentColor"/><circle cx="7.2" cy="6" r="1.5" fill="currentColor" opacity="0.65"/><circle cx="10.4" cy="6" r="1" fill="currentColor" opacity="0.38"/></svg>`
 const ICO_DLY = `<svg class="ico" viewBox="0 0 12 12"><rect x="1.5" y="2.5" width="2" height="7" fill="currentColor"/><rect x="5" y="4" width="2" height="5.5" fill="currentColor" opacity="0.7"/><rect x="8.5" y="5.8" width="2" height="3.7" fill="currentColor" opacity="0.45"/></svg>`
@@ -120,6 +127,7 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
     <span class="deck-badge">${id}</span>
     <span class="reel-indicator" title="Deck transport spin">${ICO_REEL}</span>
     <span class="track-name">— empty deck —</span>
+    <span class="fp-tags" hidden title="Acoustic fingerprint: sub anatomy · groove · swing"></span>
     <span class="phrase-cd" hidden title="Current section & bars.beats until next transition"></span>
     <span class="bar-beat" title="Current Bar.Beat from Measure 1">—</span>
     <span class="time-group">
@@ -131,11 +139,12 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
   <div class="deck-hud">
     <div class="hud-lcd bpm-card">
       <div class="hud-main">
+        <span class="note-glyph" aria-hidden="true">♩</span>
         <span class="bpm" title="Live playback BPM">–.–</span>
         <span class="hud-unit">BPM</span>
       </div>
       <div class="hud-sub">
-        <span class="orig-bpm" title="Original track tempo">ORIG –.–</span>
+        <span class="orig-bpm" title="Original track tempo">ORIG ♩ –.–</span>
         <button class="pitch-badge" title="Click to reset pitch to 0.00%">+0.00%</button>
       </div>
     </div>
@@ -144,7 +153,7 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
       <div class="hud-key-row">
         <span class="key-camelot" title="Camelot harmonic key">—</span>
         <div class="key-meta">
-          <span class="hud-cap">KEY</span>
+          <span class="hud-cap">𝄞 KEY</span>
           <span class="key-name">—</span>
         </div>
       </div>
@@ -241,7 +250,7 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
     </div>
 
     <div class="row loop-jump-row">
-      <span class="sec-lab" title="Beat Loop Rolls">${ICO_LOOP}</span>
+      <span class="sec-lab music-sym" title="Beat Loop Rolls">𝄆 𝄇</span>
       <button class="t-btn loop loop1" data-act="deck${id}.loop1" title="1-beat loop roll (hold)">1</button>
       <button class="t-btn loop loop2" data-act="deck${id}.loop2" title="2-beat loop roll (hold)">2</button>
       <button class="t-btn loop loop4" data-act="deck${id}.loop4" title="4-beat loop roll (hold)">4</button>
@@ -285,6 +294,7 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
   return {
     root,
     name: q('.track-name'),
+    fpTags: q('.fp-tags'),
     spinIcon: q('.reel-indicator'),
     barBeat: q('.bar-beat'),
     phraseCd: q('.phrase-cd'),
@@ -350,7 +360,7 @@ export function buildApp(root: HTMLElement): AppRefs {
     <div class="brand">
       <span class="brand-tag">EP–133</span>
       <h1>vibedeck</h1>
-      <span class="brand-ver">v1.3</span>
+      <span class="brand-ver">v1.4</span>
     </div>
     <span class="hint">drop tracks anywhere · click arrangement blocks to jump · keys in README</span>
     <span class="mem-meter"></span>
@@ -408,6 +418,7 @@ export function buildApp(root: HTMLElement): AppRefs {
     <section class="stream-panel copilot-panel">
       <div class="panel-tabs">
         <button class="tab-btn tab-copilot active">((CO-PILOT))</button>
+        <button class="tab-btn tab-planner">((SET PLAN))</button>
         <button class="tab-btn tab-stream">STREAM <span class="stream-status"></span></button>
         <div class="vibe-pills">
           <button class="vibe-btn active" data-vibe="flow" title="Match energy & groove">FLOW</button>
@@ -418,6 +429,17 @@ export function buildApp(root: HTMLElement): AppRefs {
       <div class="copilot-pane">
         <div class="plan-box"></div>
         <ul class="next-list"></ul>
+      </div>
+      <div class="planner-pane" hidden>
+        <div class="planner-bar">
+          <button class="arc-btn active" data-arc="arc" title="Warmup → Peak → Cooldown">ARC</button>
+          <button class="arc-btn" data-arc="climb" title="Steady Climb">CLIMB</button>
+          <button class="arc-btn" data-arc="festival" title="Two-Peak Festival">2-PEAK</button>
+          <button class="mini-btn plan-break" title="Allow intentional echo-out genre/tempo resets (includes hip-hop pockets)">GENRE BRK</button>
+          <button class="mini-btn plan-alt" title="Solve an alternate no-repeat path">ALT</button>
+        </div>
+        <div class="plan-summary"></div>
+        <ul class="plan-list"></ul>
       </div>
       <div class="stream-pane" hidden>
         <div class="stream-controls"><button class="sc-connect">connect SoundCloud</button></div>
@@ -469,12 +491,19 @@ export function buildApp(root: HTMLElement): AppRefs {
     midiWatch: footer.querySelector('.midi-watch') as HTMLButtonElement,
     midiWizardStatus: footer.querySelector('.midi-wizard-status') as HTMLElement,
     tabCopilot: footer.querySelector('.tab-copilot') as HTMLButtonElement,
+    tabPlanner: footer.querySelector('.tab-planner') as HTMLButtonElement,
     tabStream: footer.querySelector('.tab-stream') as HTMLButtonElement,
     copilotPane: footer.querySelector('.copilot-pane') as HTMLElement,
+    plannerPane: footer.querySelector('.planner-pane') as HTMLElement,
     streamPane: footer.querySelector('.stream-pane') as HTMLElement,
     vibeBtns: Array.from(footer.querySelectorAll<HTMLButtonElement>('.vibe-btn')),
     planBox: footer.querySelector('.plan-box') as HTMLElement,
     nextList: footer.querySelector('.next-list') as HTMLUListElement,
+    arcBtns: Array.from(footer.querySelectorAll<HTMLButtonElement>('.arc-btn')),
+    planAltBtn: footer.querySelector('.plan-alt') as HTMLButtonElement,
+    planBreakBtn: footer.querySelector('.plan-break') as HTMLButtonElement,
+    planSummary: footer.querySelector('.plan-summary') as HTMLElement,
+    planList: footer.querySelector('.plan-list') as HTMLUListElement,
     streamStatus: footer.querySelector('.stream-status') as HTMLElement,
     scConnect: footer.querySelector('.sc-connect') as HTMLButtonElement,
     scQuery: footer.querySelector('.sc-q') as HTMLInputElement,

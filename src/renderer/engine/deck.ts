@@ -1,6 +1,7 @@
 import { createKL, type KLEngine } from './keylock'
 import { FXUnit } from './fx'
 import type { TrackSection, TrackVibe } from './structure'
+import type { TrackFingerprint } from './fingerprint'
 
 export interface BeatGrid {
   /** beats per minute */
@@ -49,6 +50,8 @@ export interface Track {
   sections?: TrackSection[]
   /** compact energy/bass/brightness/dynamics fingerprint for Next-Up curation */
   vibe?: TrackVibe
+  /** rich acoustic fingerprint (sub anatomy, 16-step groove, swing, MFCCs, gated ∅) */
+  fingerprint?: TrackFingerprint
   analyzedAt?: string
   analysisSource?: 'browser' | 'sidecar' | 'manual'
 }

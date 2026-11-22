@@ -26,34 +26,34 @@
   --font-mono: "JetBrainsMono Nerd Font Mono", "SF Mono", Menlo, monospace;
 }
 
-/* ---- Day Mode (Default): Bright TE Studio White + Dark Carbon Ink ---- */
+/* ---- Putty Day Mode (Default): EP-133 Putty Chassis + Tinted Greys + Crisp White Waveforms & Keycaps ---- */
 :root,
 [data-theme='ko2-light'] {
-  --bg:           #f1f2f2;
-  --chassis:      #fafafa;
-  --surface:      #ffffff;
-  --surface-2:    #f4f4f1;
+  --bg:           #cfcdc5;
+  --chassis:      #dedcd5;
+  --surface:      #ecebe5;
+  --surface-2:    #e4e2db;
   --lcd-bg:       #ffffff;
-  --lcd-border:   #0f0e12;
+  --lcd-border:   #1e1e22;
   --lcd-ink:      #0f0e12;
   --lcd-dim:      #64666e;
   --keycap:       #ffffff;
-  --keycap-hover: #f3f3ef;
+  --keycap-hover: #f5f4f0;
   --keycap-fg:    #0f0e12;
   --keycap-light: #ffffff;
   --keycap-l-fg:  #0f0e12;
-  --line:         #0f0e12;
-  --line-soft:    #dcdcd6;
+  --line:         #252529;
+  --line-soft:    #c5c3ba;
   --ink:          #0f0e12;
   --ink-2:        #2d2e33;
-  --dim:          #6b6d75;
+  --dim:          #5c5e66;
   --deck-a:       #f05a24;
   --deck-b:       #0071bb;
-  --fader-track:  #e3e3de;
+  --fader-track:  #cbc9c0;
   --fader-cap:    #ffffff;
   --fader-cap-b:  #0f0e12;
-  --lip:          inset 0 -2px 0 rgba(15, 14, 18, 0.14);
-  --lip-press:    inset 0 1px 0 rgba(15, 14, 18, 0.22);
+  --lip:          inset 0 -2px 0 rgba(15, 14, 18, 0.16);
+  --lip-press:    inset 0 1px 0 rgba(15, 14, 18, 0.25);
 }
 
 /* ---- Dark Booth Edition (Matte Carbon + Obsidian Glass) ---- */
@@ -233,16 +233,28 @@ main {
 .deck[data-deck='A'].focused { box-shadow: inset 0 3px 0 var(--te-orange); }
 .deck[data-deck='B'].focused { box-shadow: inset 0 3px 0 var(--deck-b); }
 
-/* ---- 1. Deck Title + Spinning Tape Reel + Time Strip ---- */
+/* ---- 1. Deck Title + Spinning Tape Reel + Time Strip (clean, no extra border) ---- */
 
 .deck-head {
   display: flex;
   align-items: center;
   gap: 7px;
   min-height: 22px;
-  border-bottom: 1px solid var(--line-soft);
-  padding-bottom: 4px;
 }
+.fp-tags {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  padding: 1px 5px;
+  white-space: nowrap;
+  letter-spacing: 0.03em;
+}
+.fp-tags[hidden] { display: none; }
+.note-glyph { font-size: 13px; color: var(--te-orange); line-height: 1; }
+.deck[data-deck='B'] .note-glyph { color: var(--deck-b); }
+.music-sym { font-size: 12px !important; letter-spacing: 0 !important; color: var(--ink-2) !important; }
 .deck-badge {
   display: inline-flex;
   align-items: center;
@@ -318,23 +330,23 @@ main {
 .time-group .pos { color: var(--ink); font-weight: 700; }
 .time-group .rem { color: var(--dim); }
 
-/* ---- 2. Timing, Key, Spectrum VU HUD ---- */
+/* ---- 2. Unified Timing, Key & Spectrum HUD Strip (de-boxed: single clean frame) ---- */
 
 .deck-hud {
   display: grid;
   grid-template-columns: 1.05fr 1.25fr 1.15fr auto;
-  gap: 4px;
+  gap: 0;
   align-items: stretch;
-  background: var(--surface-2);
-  border: 1.5px solid var(--line);
-  padding: 3px;
+  background: var(--lcd-bg);
+  border: 1px solid var(--line);
 }
-[data-theme='ko2-dark'] .deck-hud { background: #000; border-color: #000; }
+[data-theme='ko2-dark'] .deck-hud { background: var(--lcd-bg); border-color: var(--line); }
 
 .hud-lcd {
-  background: var(--lcd-bg);
-  border: 1px solid var(--line-soft);
-  padding: 4px 7px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--line-soft);
+  padding: 5px 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -342,7 +354,9 @@ main {
   min-width: 0;
   color: var(--lcd-ink);
 }
-[data-theme='ko2-dark'] .hud-lcd { border-color: #1e2028; }
+[data-theme='ko2-dark'] .hud-lcd { border-right-color: #1e2028; }
+.vu-card { border-right: 1px solid var(--line-soft); }
+.hud-actions { display: flex; flex-direction: column; gap: 3px; padding: 3px; background: var(--surface-2); }
 
 .bpm-card { flex-direction: column; align-items: stretch; justify-content: center; gap: 2px; }
 .hud-main { display: flex; align-items: baseline; gap: 4px; }
@@ -550,15 +564,13 @@ input[type='range']::-webkit-slider-thumb {
 .rate-row input { flex: 1; }
 .rate-val { min-width: 6.5ch; text-align: right; color: var(--ink-2); font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-/* ---- 5. Color-Coded Stems Mixer Strip ---- */
+/* ---- 5. Color-Coded Stems Mixer Strip (de-boxed, sits directly on putty chassis) ---- */
 
 .stems-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  padding: 5px 6px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
+  gap: 8px;
+  padding: 2px 0;
 }
 .stems-row[hidden] { display: none; }
 .stem { display: flex; align-items: center; gap: 5px; min-width: 0; }
@@ -582,15 +594,13 @@ input[type='range']::-webkit-slider-thumb {
 .stem-other .stem-pill { background: #0284c7; }
 .stem-vocals .stem-pill { background: #7c3aed; }
 
-/* ---- 6. Tactile Keycap Performance Block (Bigger Play/Pause!) ---- */
+/* ---- 6. Tactile Keycap Performance Block (clean, directly on chassis — no extra box!) ---- */
 
 .perf-section {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 6px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
+  gap: 6px;
+  padding: 2px 0;
 }
 
 .transport { display: flex; gap: 5px; }
@@ -656,14 +666,14 @@ input[type='range']::-webkit-slider-thumb {
 .t-btn.jump, .t-btn.jump-size { padding: 4.5px 6px; font-size: 10px; border-top: 2.5px solid var(--te-cyan); }
 .t-btn.jump-size { min-width: 24px; font-family: var(--font-mono); font-weight: 800; }
 
-/* ---- 7. Mixer / EQ / FX Strip ---- */
+/* ---- 7. Mixer / EQ / FX Strip (clean subtle grey tint, no hard divider) ---- */
 
 .mix-section {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding-top: 4px;
-  border-top: 1px solid var(--line-soft);
+  padding: 6px 8px;
+  background: var(--surface-2);
 }
 .ctrl-lab {
   display: inline-flex;
@@ -706,7 +716,7 @@ input[type='range']::-webkit-slider-thumb {
 .mixer .xf-b { color: var(--deck-b); }
 .mixer .xf-row input { flex: 1; }
 .mixer-toggles { display: flex; flex-direction: column; gap: 4px; }
-.t-btn.split-cue.active, .t-btn.auto-gain.active { background: var(--te-green); color: #fff; border-color: var(--te-black); }
+.t-btn.split-cue.active, .t-btn.auto-gain.active { background: var(--te-green); color: #ffffff; border-color: var(--te-black); }
 [data-theme='ko2-dark'] .t-btn.split-cue.active,
 [data-theme='ko2-dark'] .t-btn.auto-gain.active { background: var(--te-good); color: #06140b; }
 .t-btn.rec-btn { border-top: 2.5px solid var(--te-red); }
@@ -826,19 +836,90 @@ footer {
 .vibe-btn.active { background: var(--te-black); border-color: var(--te-black); color: #fff; }
 [data-theme='ko2-dark'] .vibe-btn.active { background: var(--te-orange); color: #fff; }
 
-.copilot-pane, .stream-pane { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: auto; gap: 4px; }
-.copilot-pane[hidden], .stream-pane[hidden] { display: none; }
+.copilot-pane, .planner-pane, .stream-pane { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: auto; gap: 4px; }
+.copilot-pane[hidden], .planner-pane[hidden], .stream-pane[hidden] { display: none; }
+
+.tx-row { display: flex; align-items: center; gap: 6px; }
+.tx-curve { width: 138px; height: 34px; display: block; border: 1px solid var(--line-soft); background: var(--lcd-bg); flex-shrink: 0; }
+.tx-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 9.5px; color: var(--ink-2); }
+.tx-controls { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.tx-select {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 3px;
+}
+.plan-run {
+  padding: 2px 7px;
+  font-size: 9.5px;
+  font-weight: 800;
+  background: var(--te-green);
+  border-color: var(--te-black);
+  color: #fff;
+  box-shadow: none;
+}
+.plan-run.running { background: var(--te-red); }
+
+.planner-bar { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; flex-shrink: 0; }
+.arc-btn {
+  padding: 1.5px 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  background: var(--keycap);
+  color: var(--dim);
+  box-shadow: none;
+}
+.arc-btn.active { background: var(--te-black); color: #fff; border-color: var(--te-black); }
+[data-theme='ko2-dark'] .arc-btn.active { background: var(--te-orange); color: #fff; }
+.plan-break.active { background: var(--te-orange); color: #fff; }
+.plan-summary {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--dim);
+  background: var(--surface-2);
+  padding: 2px 5px;
+  flex-shrink: 0;
+}
+.plan-list { list-style: none; margin: 0; padding: 0; overflow: auto; min-height: 0; }
+.plan-list li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2.5px 4px;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+  font-size: 10px;
+}
+.plan-list li:hover { background: var(--surface-2); }
+.plan-idx { font-family: var(--font-mono); font-weight: 800; color: var(--dim); min-width: 2ch; font-size: 9.5px; }
+.plan-ebar { width: 28px; height: 6px; background: var(--line-soft); flex-shrink: 0; position: relative; }
+.plan-efill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--te-orange); }
+.plan-strat {
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.plan-strat.null { background: var(--te-violet); color: #fff; border-color: var(--te-black); }
 
 .plan-box {
   background: var(--lcd-bg);
   color: var(--lcd-ink);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   padding: 5px 7px;
   font-family: var(--font-mono);
   font-size: 10px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   flex-shrink: 0;
 }
 .plan-head { display: flex; align-items: center; gap: 6px; font-weight: 700; color: var(--lcd-ink); }

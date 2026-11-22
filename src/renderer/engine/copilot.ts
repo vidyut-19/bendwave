@@ -1,5 +1,6 @@
 import type { Track } from './deck'
 import type { TrackSection } from './structure'
+import { evaluateEdge, trackEnergy, type AutoStrategy } from './planner'
 
 /**
  * Harmonic & Transition Co-Pilot ("Co-pilot, not autopilot"):
@@ -51,6 +52,10 @@ export interface TransitionPlan {
   vocalWarning: string | null
   harmonic: HarmonicMatch
   pitchPct: number
+  /** intelligent auto-selected curve strategy & duration driven by the acoustic fingerprint */
+  strategy: AutoStrategy
+  bars: 4 | 8
+  rationale: string
 }
 
 function parseCamelot(code?: string): { num: number; letter: 'A' | 'B' } | null {
@@ -236,6 +241,20 @@ export function planTransition(
       ? 'VOX CLASH: both sections have vocals — mute one VOX stem or wait for instrumental'
       : null
 
+  // Compute intelligent auto-transition curve strategy from full acoustic fingerprints
+  const edge = evaluateEdge(outTrack, inTrack, new Map())
+  let strategy: AutoStrategy = edge.strategy
+  let bars: 4 | 8 = edge.bars
+  let rationale = edge.rationale
+  if (vocalWarning && outHasStems && inHasStems) {
+    strategy = 'STEM_VOCAL_BLEND'
+    bars = 8
+    rationale = 'vocal clash detected — strips outgoing VOX immediately, swaps BAS+DRM on bar 5'
+  } else if (!outHasStems && strategy === 'STEM_NULL_RESET') {
+    strategy = 'HPF_ECHO'
+    rationale = 'key clash without stems — 4B HPF sweep + Echo tail (separate stems to unlock ∅ loop)'
+  }
+
   return {
     outName: outTrack.name,
     inName: inTrack.name,
@@ -250,7 +269,10 @@ export function planTransition(
     stemNote,
     vocalWarning,
     harmonic: harm,
-    pitchPct: tm.pitchPct
+    pitchPct: tm.pitchPct,
+    strategy,
+    bars,
+    rationale
   }
 }
 
@@ -274,24 +296,29 @@ export function recommendNext(
     const harm = harmonicScore(srcTrack.camelot, t.camelot)
     const tm = tempoMatch(srcBpm, t.grid?.bpm ?? 0)
 
-    // Vibe score (0..100)
+    // Vibe score (0..100) using loudness-normalized danceEnergy + swing compatibility
     let vibeScore = 70
     let vibeNote = 'steady'
+    const eSrc = trackEnergy(srcTrack)
+    const eDst = trackEnergy(t)
+    const dE = eDst - eSrc
+    const dSw =
+      srcTrack.fingerprint && t.fingerprint
+        ? Math.abs(srcTrack.fingerprint.swing16 - t.fingerprint.swing16)
+        : 0
     if (srcVibe && t.vibe) {
-      const dE = t.vibe.energy - srcVibe.energy
       const dB = Math.abs(t.vibe.bass - srcVibe.bass)
       const dBr = Math.abs(t.vibe.brightness - srcVibe.brightness)
       if (vibeMode === 'flow') {
-        vibeScore = Math.max(0, 100 - (Math.abs(dE) * 90 + dB * 40 + dBr * 35))
-        vibeNote = Math.abs(dE) < 0.1 ? 'vibe match' : dE > 0 ? 'slight lift' : 'slight dip'
+        vibeScore = Math.max(0, 100 - (Math.abs(dE) * 85 + dB * 30 + dBr * 25 + dSw * 140))
+        vibeNote = Math.abs(dE) < 0.12 ? 'vibe match' : dE > 0 ? 'slight lift' : 'slight dip'
       } else if (vibeMode === 'lift') {
-        // reward +0.08..+0.30 higher energy
         const target = 0.16
-        vibeScore = Math.max(0, 100 - Math.abs(dE - target) * 160 - dB * 25)
+        vibeScore = Math.max(0, 100 - Math.abs(dE - target) * 150 - dSw * 120)
         vibeNote = dE > 0.05 ? 'energy lift' : 'holds energy'
       } else {
         const target = -0.16
-        vibeScore = Math.max(0, 100 - Math.abs(dE - target) * 160 - dB * 25)
+        vibeScore = Math.max(0, 100 - Math.abs(dE - target) * 150 - dSw * 120)
         vibeNote = dE < -0.05 ? 'cool down' : 'steady groove'
       }
     }

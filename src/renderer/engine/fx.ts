@@ -26,10 +26,10 @@ function makeIR(ctx: BaseAudioContext, seconds: number, decay: number): AudioBuf
 const DELAY_FRACS = [0.25, 0.5, 0.75, 1]
 
 export function delayFracLabel(f: number): string {
-  if (f === 0.25) return '1/4'
-  if (f === 0.5) return '1/2'
-  if (f === 0.75) return '3/4'
-  return '1/1'
+  if (f === 0.25) return '♬ 1/4'
+  if (f === 0.5) return '♪ 1/2'
+  if (f === 0.75) return '♪· 3/4'
+  return '♩ 1/1'
 }
 
 export class FXUnit {

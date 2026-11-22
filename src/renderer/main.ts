@@ -14,7 +14,10 @@ import { AudioMemory } from './engine/memory'
 import { computeLoudness, autoGainDb, TARGET_LUFS } from './engine/analysis'
 import { parseAudioTags, type AudioTags } from './engine/id3'
 import { analyzeStructure, annotateVocals, pickAutoCues, SECTION_COLORS } from './engine/structure'
+import { computeFingerprint, describeFingerprint } from './engine/fingerprint'
 import { planTransition, recommendNext, type VibeMode } from './engine/copilot'
+import { planSetPath, type SetArc, type AutoStrategy } from './engine/planner'
+import { TransitionRunner, drawTransitionCurves, STRATEGY_META } from './engine/transition'
 import { Sampler } from './engine/sampler'
 import { Recorder } from './engine/recorder'
 import { DeckMeterView, MasterMeterView } from './engine/meter'
@@ -44,6 +47,19 @@ const SAMPLER_KEY = 'vibedeck.sampler.v1'
 // master-bus recorder (streaming WAV to disk)
 const recorder = new Recorder(engine.ctx)
 
+// live automated transition runner (Spotify-Mix-style envelopes + stems + touch-to-override)
+const txRunner = new TransitionRunner(engine)
+let txStrategyOverride: AutoStrategy | 'AUTO' = 'AUTO'
+let txBarsOverride: 4 | 8 | 'AUTO' = 'AUTO'
+let txCurveCanvas: HTMLCanvasElement | null = null
+let txCurrentStrategy: AutoStrategy = 'BASS_SWAP'
+let txCurrentBars: 4 | 8 = 8
+
+// set path planner state
+let setArc: SetArc = 'arc'
+let planSeed = 0
+let planGenreBreak = false
+
 function stopRecording(reason?: string): void {
   if (!recorder.recording) return
   void (async () => {
@@ -67,9 +83,10 @@ let chassisTheme: ChassisTheme =
 function applyTheme(t: ChassisTheme): void {
   chassisTheme = t
   document.documentElement.dataset.theme = t
-  refs.themeBtn.textContent = t === 'ko2-light' ? 'DARK' : 'DAY'
+  refs.themeBtn.textContent = t === 'ko2-light' ? 'DARK' : 'PUTTY'
   localStorage.setItem('vibedeck.theme', t)
   for (const wf of waveforms.values()) wf.markDirty()
+  if (txCurveCanvas) drawTransitionCurves(txCurveCanvas, txCurrentStrategy, txCurrentBars, txRunner.active?.progress ?? null)
 }
 applyTheme(chassisTheme)
 refs.themeBtn.addEventListener('click', () => {
@@ -219,7 +236,7 @@ async function ingest(
     track.analysisSource = 'browser'
   }
 
-  // 3. Instant loudness + bar-synchronous Arrangement & Vibe (<30ms)
+  // 3. Instant loudness + bar-synchronous Arrangement, Vibe & Deep Fingerprint (<60ms)
   if (track.gainDb == null) {
     track.lufs = computeLoudness(buffer)
     track.gainDb = autoGainDb(track.lufs)
@@ -228,6 +245,9 @@ async function ingest(
     const { sections, vibe } = analyzeStructure(buffer, track.grid)
     track.sections = sections
     track.vibe = vibe
+  }
+  if (!track.fingerprint) {
+    track.fingerprint = computeFingerprint(buffer, track.grid)
   }
 
   track.analyzedAt = new Date().toISOString()
@@ -435,13 +455,16 @@ async function loadTrackIntoDeck(
       }
     }
 
-    // Backfill Serato/ID3 tags, arrangement & vibe for older crate entries
+    // Backfill Serato/ID3 tags, arrangement, vibe & deep fingerprint for older crate entries
     const hadTags = !!tags.bpm || !!tags.key
     if (hadTags) applyTagsToTrack(track, tags)
     if (!track.sections?.length || !track.vibe || hadTags) {
       const { sections, vibe } = analyzeStructure(buf, track.grid)
       track.sections = sections
       track.vibe = vibe
+    }
+    if (!track.fingerprint || hadTags) {
+      track.fingerprint = computeFingerprint(buf, track.grid)
     }
 
     const stemBufs = track.stems ? await loadStemBuffers(track) : []
@@ -1055,7 +1078,11 @@ function updateDeckMeta(deck: Deck): void {
   const t = deck.track
   r.name.textContent = t?.name ?? '— empty deck —'
   const orig = t?.grid?.bpm
-  r.origBpm.textContent = orig && orig > 0 ? `ORIG ${orig.toFixed(1)}` : 'ORIG –.–'
+  r.origBpm.textContent = orig && orig > 0 ? `ORIG ♩ ${orig.toFixed(1)}` : 'ORIG ♩ –.–'
+
+  const tags = describeFingerprint(t?.fingerprint)
+  r.fpTags.hidden = tags.length === 0
+  r.fpTags.textContent = tags.join(' · ')
 
   const cam = t?.camelot ?? ''
   const col = camelotColor(cam)
@@ -1141,7 +1168,10 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   })
 
   const eqs = [r.eqLow, r.eqMid, r.eqHigh]
-  const applyEq = () => deck.setEQ(eqs[0].valueAsNumber, eqs[1].valueAsNumber, eqs[2].valueAsNumber)
+  const applyEq = () => {
+    if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outEq' : 'inEq')
+    deck.setEQ(eqs[0].valueAsNumber, eqs[1].valueAsNumber, eqs[2].valueAsNumber)
+  }
   eqs.forEach((e) => {
     e.oninput = applyEq
     e.ondblclick = () => {
@@ -1152,6 +1182,7 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
 
   r.stemSliders.forEach((s, i) => {
     s.oninput = () => {
+      if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outStems' : 'inStems')
       const v = s.valueAsNumber
       if (v >= 0.02) stemSavedGain[deck.id][i] = v
       applyStemGainUI(deck, i, v)
@@ -1159,6 +1190,7 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   })
   r.stemMuteBtns.forEach((btn, i) => {
     btn.addEventListener('click', (e) => {
+      if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outStems' : 'inStems')
       const saved = stemSavedGain[deck.id]
       if (e.shiftKey) {
         // solo toggle: if already soloed, restore all; else mute others
@@ -1185,6 +1217,7 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   })
 
   r.filter.oninput = () => {
+    if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outFilter' : 'inFilter')
     deck.setFilter(r.filter.valueAsNumber)
     updateFilterLabel(r, r.filter.valueAsNumber)
   }
@@ -1293,7 +1326,10 @@ refs.crateSort.addEventListener('change', () => {
   renderCrate()
 })
 
-refs.xfader.addEventListener('input', () => engine.mixer.setCrossfade(refs.xfader.valueAsNumber))
+refs.xfader.addEventListener('input', () => {
+  txRunner.override('xfade')
+  engine.mixer.setCrossfade(refs.xfader.valueAsNumber)
+})
 refs.master.addEventListener('input', () => {
   engine.master.gain.value = refs.master.valueAsNumber
 })
@@ -1388,13 +1424,19 @@ let lastCopilotUpdate = 0
 
 function tick(): void {
   const now = performance.now()
+  if (txRunner.isRunning) {
+    txRunner.update()
+    if (txCurveCanvas && txRunner.active) {
+      drawTransitionCurves(txCurveCanvas, txRunner.active.strategy, txRunner.active.bars, txRunner.active.progress)
+    }
+  }
   if (now - lastSyncUpdate > 200) {
     lastSyncUpdate = now
     syncCtl.update()
   }
   if (now - lastCopilotUpdate > 1500) {
     lastCopilotUpdate = now
-    if (engine.deckA.playing || engine.deckB.playing) renderCopilot()
+    if (!txRunner.isRunning && (engine.deckA.playing || engine.deckB.playing)) renderCopilot()
   }
   if (now - lastMemUpdate > 1000) {
     lastMemUpdate = now
@@ -1765,20 +1807,34 @@ refs.midiWizard.addEventListener('click', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Co-Pilot panel: Top-5 Next Up curation + 5-point Transition Recipe
+// Co-Pilot + Automated Transition Curves + Graph-Theoretic Set Path Planner
 // ---------------------------------------------------------------------------
 
-function setCopilotTab(tab: 'copilot' | 'stream'): void {
-  const isCo = tab === 'copilot'
-  refs.tabCopilot.classList.toggle('active', isCo)
-  refs.tabStream.classList.toggle('active', !isCo)
-  refs.copilotPane.hidden = !isCo
-  refs.streamPane.hidden = isCo
+txRunner.onFinish = (msg) => {
+  log(msg)
+  renderCopilot()
+}
+txRunner.onStemGain = (deck, i, v) => applyStemGainUI(deck, i, v)
+txRunner.onFilterChanged = (deck, v) => {
+  const r = deckRefs(deck)
+  if (document.activeElement !== r.filter) r.filter.value = String(v.toFixed(2))
+  updateFilterLabel(r, v)
+}
+
+function setCopilotTab(tab: 'copilot' | 'planner' | 'stream'): void {
+  refs.tabCopilot.classList.toggle('active', tab === 'copilot')
+  refs.tabPlanner.classList.toggle('active', tab === 'planner')
+  refs.tabStream.classList.toggle('active', tab === 'stream')
+  refs.copilotPane.hidden = tab !== 'copilot'
+  refs.plannerPane.hidden = tab !== 'planner'
+  refs.streamPane.hidden = tab !== 'stream'
   const vibeBox = refs.vibeBtns[0]?.parentElement
-  if (vibeBox) vibeBox.hidden = !isCo
+  if (vibeBox) vibeBox.hidden = tab !== 'copilot'
+  if (tab === 'planner') renderPlanner()
 }
 
 refs.tabCopilot.addEventListener('click', () => setCopilotTab('copilot'))
+refs.tabPlanner.addEventListener('click', () => setCopilotTab('planner'))
 refs.tabStream.addEventListener('click', () => setCopilotTab('stream'))
 
 refs.vibeBtns.forEach((btn) => {
@@ -1789,8 +1845,28 @@ refs.vibeBtns.forEach((btn) => {
   })
 })
 
+refs.arcBtns.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    setArc = (btn.dataset.arc as SetArc) ?? 'arc'
+    refs.arcBtns.forEach((b) => b.classList.toggle('active', b === btn))
+    renderPlanner()
+  })
+})
+
+refs.planAltBtn.addEventListener('click', () => {
+  planSeed++
+  renderPlanner()
+})
+
+refs.planBreakBtn.addEventListener('click', () => {
+  planGenreBreak = !planGenreBreak
+  refs.planBreakBtn.classList.toggle('active', planGenreBreak)
+  renderPlanner()
+})
+
 /** Determine which deck is currently leading (outgoing) and which is incoming. */
 function activeDeckPair(): { out: Deck; inc: Deck } {
+  if (txRunner.active) return { out: txRunner.active.outDeck, inc: txRunner.active.inDeck }
   const a = engine.deckA
   const b = engine.deckB
   if (a.playing && !b.playing) return { out: a, inc: b }
@@ -1801,10 +1877,15 @@ function activeDeckPair(): { out: Deck; inc: Deck } {
   return { out: b, inc: a }
 }
 
+const ALL_STRATEGIES: AutoStrategy[] = [
+  'BASS_SWAP', 'HPF_ECHO', 'LPF_IN', 'CROSS_FILTER', 'STEM_NULL_RESET', 'STEM_VOCAL_BLEND'
+]
+
 function renderCopilot(): void {
   const { out, inc } = activeDeckPair()
+  txCurveCanvas = null
 
-  // 1. Live Transition Plan card (when both decks have tracks)
+  // 1. Live Automated Transition Card (when both decks have tracks)
   if (out.track && inc.track) {
     const plan = planTransition(
       out.track,
@@ -1814,24 +1895,54 @@ function renderCopilot(): void {
       out.stemCount > 0,
       inc.stemCount > 0
     )
+    const activeStrat: AutoStrategy = txStrategyOverride === 'AUTO' ? plan.strategy : txStrategyOverride
+    const activeBars: 4 | 8 = txBarsOverride === 'AUTO' ? plan.bars : txBarsOverride
+    txCurrentStrategy = activeStrat
+    txCurrentBars = activeBars
+
     const harmCls = plan.harmonic.compatible ? '' : ' clash'
     const pitchStr = `${plan.pitchPct >= 0 ? '+' : ''}${plan.pitchPct.toFixed(1)}%`
+    const running = txRunner.isRunning
+    const stratOpts = [
+      `<option value="AUTO"${txStrategyOverride === 'AUTO' ? ' selected' : ''}>AUTO · ${STRATEGY_META[plan.strategy].short}</option>`,
+      ...ALL_STRATEGIES.map(
+        (s) => `<option value="${s}"${txStrategyOverride === s ? ' selected' : ''}>${STRATEGY_META[s].short}</option>`
+      )
+    ].join('')
+
     refs.planBox.innerHTML = `
       <div class="plan-head">
         <span>${out.id} → ${inc.id}</span>
         <span class="next-harm${harmCls}">${escapeHtml(plan.harmonic.tag)}</span>
         <span class="next-pitch">${escapeHtml(pitchStr)}</span>
+        <select class="tx-select tx-strat" title="Transition curve preset">${stratOpts}</select>
+        <button class="mini-btn tx-bars" title="Transition length (4B / 8B)">${activeBars}B</button>
         <button class="plan-prep" title="Jump deck ${inc.id} to mix-in cue & set CUE">PREP ${inc.id}</button>
+        <button class="plan-run${running ? ' running' : ''}" title="Execute automated transition curves live (touch any control to override)">${running ? '■ STOP' : '▶ RUN'}</button>
       </div>
-      ${plan.vocalWarning ? `<div class="plan-vox">⚠ ${escapeHtml(plan.vocalWarning)}</div>` : ''}
-      <div class="plan-grid">
-        <span><b>OUT</b>${escapeHtml(plan.outCueLabel)}</span>
-        <span><b>IN</b>${escapeHtml(plan.inCueLabel)}</span>
-        <span><b>LOOP</b>${escapeHtml(plan.loopNote)}</span>
-        <span><b>FLT</b>${escapeHtml(plan.filterNote)}</span>
-        <span><b>KICK</b>${escapeHtml(plan.kickOwner)}</span>
-        <span><b>MIX</b>${escapeHtml(plan.stemNote)}</span>
+      ${plan.vocalWarning ? `<div class="plan-vox">[!] ${escapeHtml(plan.vocalWarning)}</div>` : ''}
+      <div class="tx-row">
+        <canvas class="tx-curve" title="Orange: Out Vol · Blue: In Vol · Red: Bass · Violet: Filter"></canvas>
+        <div class="tx-meta">
+          <span><b>WHY</b> ${escapeHtml(plan.rationale)}</span>
+          <span><b>IN</b> ${escapeHtml(plan.inCueLabel)} · <b>OUT</b> ${escapeHtml(plan.outCueLabel)}</span>
+          <span><b>KICK</b> ${escapeHtml(plan.kickOwner)}</span>
+        </div>
       </div>`
+
+    txCurveCanvas = refs.planBox.querySelector<HTMLCanvasElement>('.tx-curve')
+    if (txCurveCanvas) {
+      drawTransitionCurves(txCurveCanvas, activeStrat, activeBars, txRunner.active?.progress ?? null)
+    }
+
+    refs.planBox.querySelector<HTMLSelectElement>('.tx-strat')?.addEventListener('change', (e) => {
+      txStrategyOverride = (e.target as HTMLSelectElement).value as AutoStrategy | 'AUTO'
+      renderCopilot()
+    })
+    refs.planBox.querySelector('.tx-bars')?.addEventListener('click', () => {
+      txBarsOverride = activeBars === 8 ? 4 : 8
+      renderCopilot()
+    })
     refs.planBox.querySelector('.plan-prep')?.addEventListener('click', () => {
       releaseSyncIfSlave(inc)
       inc.seek(plan.inCueSec)
@@ -1840,11 +1951,27 @@ function renderCopilot(): void {
       wfFor(inc).markDirty()
       log(`co-pilot: prepped deck ${inc.id} cue @ ${plan.inCueLabel}`)
     })
+    refs.planBox.querySelector('.plan-run')?.addEventListener('click', () => {
+      if (txRunner.isRunning) {
+        txRunner.cancel(true)
+        log('auto-transition cancelled')
+        renderCopilot()
+        return
+      }
+      engine.resume()
+      const res = txRunner.start(out, inc, activeStrat, activeBars, plan.inCueSec)
+      if (res.ok) {
+        log(`running ${activeBars}B ${STRATEGY_META[activeStrat].label} (${out.id} → ${inc.id}) — touch any fader/knob to override`)
+      } else {
+        log(`transition failed: ${res.error}`)
+      }
+      renderCopilot()
+    })
   } else if (out.track) {
-    refs.planBox.innerHTML = `<div class="plan-empty">Deck ${out.id} active (${out.track.grid?.bpm.toFixed(1) ?? '?'} BPM · ${out.track.camelot ?? 'no key'}) — click any Next Up track below to load & cue on Deck ${inc.id}</div>`
+    refs.planBox.innerHTML = `<div class="plan-empty">Deck ${out.id} active (♩ ${out.track.grid?.bpm.toFixed(1) ?? '?'} · ${out.track.camelot ?? 'no key'}) — click any Next Up track below to load & cue on Deck ${inc.id}</div>`
   } else {
     refs.planBox.innerHTML =
-      '<div class="plan-empty">Drop tracks (or drag a whole crate folder) to unlock Top-5 Next Up curation & transition plans.</div>'
+      '<div class="plan-empty">Drop tracks (or drag a whole crate folder) to unlock Top-5 Next Up curation, Set Path Planner & Automated Transitions.</div>'
   }
 
   // 2. Top-5 Next-Up recommendations from crate
@@ -1879,7 +2006,7 @@ function renderCopilot(): void {
       <span class="next-harm${harmCls}">${escapeHtml(p.harmonic.tag)}</span>
       <span class="next-pitch">${escapeHtml(pitchStr)}</span>
       <span class="next-hint">${escapeHtml(p.quickMove)}</span>`
-    li.title = `${p.track.name} · ${p.track.grid?.bpm.toFixed(1) ?? '?'} BPM · ${p.vibeNote} · Click to load & cue on Deck ${inc.id}`
+    li.title = `${p.track.name} · ♩ ${p.track.grid?.bpm.toFixed(1) ?? '?'} · ${p.vibeNote} · Click to load & cue on Deck ${inc.id}`
     li.addEventListener('click', () => {
       const plan = planTransition(
         out.track!,
@@ -1889,9 +2016,64 @@ function renderCopilot(): void {
         out.stemCount > 0,
         !!p.track.stems
       )
+      txStrategyOverride = 'AUTO'
+      txBarsOverride = 'AUTO'
       void loadTrackIntoDeck(p.track, undefined, { targetDeck: inc, cueAtSec: plan.inCueSec })
     })
     refs.nextList.append(li)
+  }
+
+  if (!refs.plannerPane.hidden) renderPlanner()
+}
+
+function renderPlanner(): void {
+  refs.planList.innerHTML = ''
+  if (crate.tracks.length < 2) {
+    refs.planSummary.textContent = 'Add at least 2 tracks (or drag a full folder) to solve a harmonic set path.'
+    return
+  }
+  const { out, inc } = activeDeckPair()
+  const planned = planSetPath(crate.tracks, {
+    arc: setArc,
+    length: Math.min(12, crate.tracks.length),
+    openerId: out.track?.id,
+    allowGenreBreak: planGenreBreak,
+    jitterSeed: planSeed
+  })
+
+  const clSummary = planned.clusters.map((c) => `${c.label} (${c.tracks.length})`).join(' · ')
+  refs.planSummary.textContent =
+    `${planned.steps.length} tracks · cost ${planned.totalCost.toFixed(1)} · clusters: ${clSummary}`
+
+  const bridgeSet = new Set(planned.bridgeTrackIds)
+  for (let i = 0; i < planned.steps.length; i++) {
+    const st = planned.steps[i]
+    const t = st.track
+    const edge = st.incomingEdge
+    const camCol = camelotColor(t.camelot) ?? '#94a3b8'
+    const stratTxt = edge ? `${edge.bars}B ${STRATEGY_META[edge.strategy].short}` : 'OPENER'
+    const isNull = !!edge && (edge.usedStemNull || edge.usedNaturalNull)
+    const bridgeTag = bridgeSet.has(t.id) ? '<span class="crate-tag cues" title="Crate bridge track">BRG</span>' : ''
+    const li = document.createElement('li')
+    li.innerHTML = `
+      <span class="plan-idx">${String(i + 1).padStart(2, '0')}</span>
+      <span class="plan-ebar" title="Dancefloor energy ${(st.energy * 100).toFixed(0)}%"><span class="plan-efill" style="width:${Math.round(st.energy * 100)}%"></span></span>
+      <span class="next-name">${escapeHtml(t.name)}</span>
+      ${bridgeTag}
+      <span class="next-pitch">${t.grid?.bpm ? t.grid.bpm.toFixed(0) : '?'}</span>
+      ${t.camelot ? `<span class="crate-key" style="background:${camCol}">${escapeHtml(t.camelot)}</span>` : ''}
+      <span class="plan-strat${isNull ? ' null' : ''}" title="${escapeHtml(edge?.rationale ?? 'Opening track')}">${escapeHtml(stratTxt)}</span>`
+    li.title = edge ? `${t.name} — ${edge.rationale} · Click to load on Deck ${inc.id}` : `${t.name} (opener)`
+    li.addEventListener('click', () => {
+      if (edge) {
+        txStrategyOverride = edge.strategy
+        txBarsOverride = edge.bars
+      }
+      const target = out.track?.id === t.id ? out : inc
+      void loadTrackIntoDeck(t, undefined, { targetDeck: target })
+      setCopilotTab('copilot')
+    })
+    refs.planList.append(li)
   }
 }
 
@@ -1988,6 +2170,7 @@ async function addStreamTrack(ref: StreamTrackRef): Promise<void> {
     const { sections, vibe } = analyzeStructure(buffer, track.grid)
     track.sections = sections
     track.vibe = vibe
+    track.fingerprint = computeFingerprint(buffer, track.grid)
     track.pcmBytes = AudioMemory.bytesOf(buffer)
     registerSCMemory(ref.id, track.name, buffer)
     crate.upsert(track)
