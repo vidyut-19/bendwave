@@ -467,9 +467,9 @@ async function loadTrackIntoDeck(
   }
   const deck =
     opts.targetDeck ??
-    (!engine.deckA.hasAudio
+    (!engine.deckA.hasAudio && !deckLoading.A
       ? engine.deckA
-      : !engine.deckB.hasAudio
+      : !engine.deckB.hasAudio && !deckLoading.B
         ? engine.deckB
         : focusedDeck === 'B'
           ? engine.deckB
@@ -2471,41 +2471,53 @@ refs.envInstallStemsBtn.addEventListener('click', () => {
 window.vibedeck?.onEnvLog((line) => log(`py: ${line}`))
 
 // ---------------------------------------------------------------------------
-// boot
+// boot — wire decks & start render loop IMMEDIATELY so slow IPC/MIDI never blocks UI
 // ---------------------------------------------------------------------------
+
+wireDeck(engine.deckA, refs.deckA)
+wireDeck(engine.deckB, refs.deckB)
+for (const deck of [engine.deckA, engine.deckB]) {
+  deck.onEnded = () => log(`deck ${deck.id} track ended`)
+  deck.onKeylockError = (m) =>
+    log(`deck ${deck.id} key lock unavailable (${m}) — playing without it`)
+}
+renderMidiPanel()
+window.addEventListener('pointerdown', () => engine.resume())
+// Start animation loop immediately — waveforms, VU meters, BPM, timers live from frame 0!
+requestAnimationFrame(tick)
 
 void (async () => {
   await crate.load()
   const savedSort = localStorage.getItem('vibedeck.crate-sort')
   if (savedSort) refs.crateSort.value = savedSort
   renderCrate()
-  wireDeck(engine.deckA, refs.deckA)
-  wireDeck(engine.deckB, refs.deckB)
-  for (const deck of [engine.deckA, engine.deckB]) {
-    deck.onEnded = () => log(`deck ${deck.id} track ended`)
-    deck.onKeylockError = (m) =>
-      log(`deck ${deck.id} key lock unavailable (${m}) — playing without it`)
-  }
-  renderMidiPanel()
-  await restoreSampler()
-  await refreshEnvStatus()
   renderCopilot()
-  await sc.refreshStatus()
-  updateStreamPanel()
-  if (sc.configured && !sc.loggedIn) {
-    log('soundcloud configured — click "connect SoundCloud" in the STREAM panel')
-  } else if (!sc.configured) {
-    log('soundcloud: set up soundcloud.config.json to enable streaming (docs/streaming.md)')
-  }
-  const midiOk = await midi.init()
-  renderMidiPanel()
-  log(
-    midiOk
-      ? 'midi ready — click "learn" next to an action, then touch a control'
-      : 'web midi unavailable in this build'
-  )
+
   log('drop tracks or folders anywhere (or "+ ADD / FOLDER") — tags, arrangement & fingerprint run instantly')
   log('SYNC engages a drift lock — press SYNC again to release it')
-  window.addEventListener('pointerdown', () => engine.resume())
-  requestAnimationFrame(tick)
+
+  // Run slow background subsystems concurrently so none can ever stall the app
+  void restoreSampler()
+  void refreshEnvStatus()
+  void (async () => {
+    await sc.refreshStatus()
+    updateStreamPanel()
+    if (sc.configured && !sc.loggedIn) {
+      log('soundcloud configured — click "connect SoundCloud" in the STREAM panel')
+    } else if (!sc.configured) {
+      log('soundcloud: set up soundcloud.config.json to enable streaming (docs/streaming.md)')
+    }
+  })()
+  void (async () => {
+    const midiOk = await Promise.race([
+      midi.init(),
+      new Promise<boolean>((r) => window.setTimeout(() => r(false), 5000))
+    ])
+    renderMidiPanel()
+    log(
+      midiOk
+        ? 'midi ready — click "learn" next to an action, then touch a control'
+        : 'web midi unavailable or timed out (replug controller or click watch)'
+    )
+  })()
 })()
