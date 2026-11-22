@@ -1,21 +1,21 @@
 import type { Deck } from './deck'
 import { SECTION_COLORS, type TrackSection } from './structure'
 
-export const HC_COLORS = ['#f43f5e', '#f59e0b', '#10b981', '#3b82f6'] as const
-export const CUE_COLOR = '#fbbf24'
+export const HC_COLORS = ['#e11d48', '#d97706', '#059669', '#0071bb'] as const
+export const CUE_COLOR = '#f05a24'
 
 /** Order matches STEM_ORDER: ['drums', 'bass', 'other', 'vocals'] */
 export const STEM_META = [
-  { key: 'drums', short: 'DRM', label: 'DRUMS', color: '#f59e0b', rgb: [245, 158, 11] as const },
-  { key: 'bass', short: 'BAS', label: 'BASS', color: '#f43f5e', rgb: [244, 63, 94] as const },
-  { key: 'other', short: 'OTH', label: 'OTHER', color: '#06b6d4', rgb: [6, 182, 212] as const },
-  { key: 'vocals', short: 'VOX', label: 'VOCALS', color: '#c084fc', rgb: [192, 132, 252] as const }
+  { key: 'drums', short: 'DRM', label: 'DRUMS', color: '#d97706', rgb: [217, 119, 6] as const, rgbDark: [245, 158, 11] as const },
+  { key: 'bass', short: 'BAS', label: 'BASS', color: '#e11d48', rgb: [225, 29, 72] as const, rgbDark: [244, 63, 94] as const },
+  { key: 'other', short: 'OTH', label: 'OTHER', color: '#0284c7', rgb: [2, 132, 199] as const, rgbDark: [6, 182, 212] as const },
+  { key: 'vocals', short: 'VOX', label: 'VOCALS', color: '#7c3aed', rgb: [124, 58, 237] as const, rgbDark: [192, 132, 252] as const }
 ] as const
 
 export const BAND_META = [
-  { short: 'LOW', color: '#f43f5e', rgb: [244, 63, 94] as const },
-  { short: 'MID', color: '#22c55e', rgb: [34, 197, 94] as const },
-  { short: 'HI', color: '#38bdf8', rgb: [56, 189, 248] as const }
+  { short: 'LOW', colorLight: '#e11d48', colorDark: '#f43f5e' },
+  { short: 'MID', colorLight: '#059669', colorDark: '#22c55e' },
+  { short: 'HI', colorLight: '#0071bb', colorDark: '#38bdf8' }
 ] as const
 
 const CAMELOT_COLORS: Record<number, string> = {
@@ -37,6 +37,10 @@ export function camelotColor(code?: string): string | null {
   const m = /^(\d{1,2})[AB]$/i.exec(code ?? '')
   if (!m) return null
   return CAMELOT_COLORS[Number(m[1])] ?? null
+}
+
+function isLightTheme(): boolean {
+  return document.documentElement.dataset.theme !== 'ko2-dark'
 }
 
 export type WaveformMode = 'rgb' | 'bands' | 'stems'
@@ -115,11 +119,6 @@ function buildPeakPyramid(buffer: AudioBuffer): PeakPyramid {
   }
 }
 
-/**
- * Single-pass 3-band spectral extractor (low <250Hz, mid 250-3.2kHz, high >3.2kHz)
- * with clamped peaks (prevents hot MP3 >1.0 intersample clipping) AND RMS body
- * levels so intros/breakdowns vs drops stand out cleanly visually.
- */
 function buildFreqPyramid(buffer: AudioBuffer): FreqPyramid {
   const n = buffer.length
   const sr = buffer.sampleRate
@@ -167,7 +166,6 @@ function buildFreqPyramid(buffer: AudioBuffer): FreqPyramid {
     const inv = 1 / Math.max(1, cnt)
     peak[b] = Math.min(1, mAmp)
     rms[b] = Math.min(1, Math.sqrt(sAmp * inv) * 1.55)
-    // RMS-weighted bands (no single-sample spike flattening!)
     lo[b] = Math.min(1, Math.sqrt(sLo * inv) * 2.1)
     mid[b] = Math.min(1, Math.sqrt(sMid * inv) * 2.5)
     hi[b] = Math.min(1, Math.sqrt(sHi * inv) * 4.2)
@@ -207,11 +205,18 @@ function sampleRange(arr: Float32Array, pps: number, ta: number, tb: number, mod
   return m
 }
 
-function freqRgb(lo: number, mid: number, hi: number): [number, number, number] {
+function freqRgb(lo: number, mid: number, hi: number, light: boolean): [number, number, number] {
   const wLo = lo * 1.2
   const wMid = mid * 1.3
   const wHi = hi * 1.65
   const sum = wLo + wMid + wHi + 1e-6
+  if (light) {
+    // Rich high-contrast ink colors for crisp white paper background
+    const r = (wLo * 225 + wMid * 12 + wHi * 0) / sum
+    const g = (wLo * 38 + wMid * 140 + wHi * 113) / sum
+    const b = (wLo * 58 + wMid * 86 + wHi * 187) / sum
+    return [Math.min(255, Math.round(r)), Math.min(255, Math.round(g)), Math.min(255, Math.round(b))]
+  }
   const r = (wLo * 248 + wMid * 68 + wHi * 56) / sum
   const g = (wLo * 66 + wMid * 212 + wHi * 195) / sum
   const b = (wLo * 92 + wMid * 138 + wHi * 250) / sum
@@ -245,13 +250,8 @@ function sectionAt(sections: TrackSection[] | undefined, sec: number): TrackSect
 }
 
 /**
- * Dual-view deck waveform controller:
- *  1. Zoom-out Overview Strip — color-coded Arrangement Ribbon (INTRO/BUILD/
- *     DROP/BREAK/OUTRO), full-track RMS+peak waveform, bar ruler, hover
- *     inspector, viewport bracket, cue flags, click/drag seek.
- *  2. Close-up Scrolling Waveform — 4-STEMS / 3-BAND / RGB views with RMS body
- *     + peak outline, live stem dimming, downbeat bar numbers, section badges,
- *     loop region, and colored cue flags.
+ * Dual-view deck waveform controller (theme-aware: crisp white-paper Day Mode
+ * and obsidian Dark Booth Mode).
  */
 export class WaveformView {
   private overviewCanvas: HTMLCanvasElement
@@ -292,7 +292,6 @@ export class WaveformView {
     observe(overviewCanvas)
     observe(detailCanvas)
 
-    // Overview interactions: click ribbon = snap to section start; click/drag body = seek
     const seekOverview = (e: PointerEvent, allowSectionSnap: boolean) => {
       if (!this.onSeek || this.duration <= 0) return
       const rect = overviewCanvas.getBoundingClientRect()
@@ -325,7 +324,6 @@ export class WaveformView {
       this.dirty = true
     })
 
-    // Detail interactions: click/drag to scrub, wheel to zoom
     const seekDetail = (e: PointerEvent) => {
       if (!this.onSeek || !this.freq) return
       const rect = detailCanvas.getBoundingClientRect()
@@ -401,15 +399,16 @@ export class WaveformView {
 
   draw(deck: Deck): void {
     this.dirty = false
-    this.drawOverview(deck)
-    this.drawDetail(deck)
+    const light = isLightTheme()
+    this.drawOverview(deck, light)
+    this.drawDetail(deck, light)
   }
 
   // -------------------------------------------------------------------------
-  // 1. Zoom-out Overview Strip (Arrangement Ribbon + Full-Track Waveform)
+  // 1. Zoom-out Overview Strip
   // -------------------------------------------------------------------------
 
-  private drawOverview(deck: Deck): void {
+  private drawOverview(deck: Deck, light: boolean): void {
     const c = this.overviewCanvas
     const g = this.og
     const w = c.width
@@ -422,19 +421,19 @@ export class WaveformView {
     const bodyY = ribbonH
     const bodyH = Math.max(1, h - ribbonH)
 
-    g.fillStyle = '#0c0f14'
+    g.fillStyle = light ? '#ffffff' : '#0c0f14'
     g.fillRect(0, 0, w, h)
 
-    g.fillStyle = '#11161e'
+    g.fillStyle = light ? '#f4f4f1' : '#11161e'
     g.fillRect(0, 0, w, ribbonH)
-    g.strokeStyle = 'rgba(255,255,255,0.08)'
+    g.strokeStyle = light ? 'rgba(15,14,18,0.14)' : 'rgba(255,255,255,0.08)'
     g.beginPath()
     g.moveTo(0, ribbonH + 0.5)
     g.lineTo(w, ribbonH + 0.5)
     g.stroke()
 
     if (!this.freq || this.duration <= 0) {
-      g.fillStyle = '#3a424d'
+      g.fillStyle = light ? '#8c8d94' : '#3a424d'
       g.font = `${10 * dpr}px ui-monospace, monospace`
       g.textAlign = 'center'
       g.fillText('full-track overview & arrangement ribbon — drop audio to analyze', w / 2, bodyY + bodyH / 2 + 3 * dpr)
@@ -447,7 +446,7 @@ export class WaveformView {
     const bpb = grid?.beatsPerBar ?? 4
     const phraseBars = grid?.phraseBars ?? 8
 
-    // Color-coded Arrangement Ribbon along top edge (click any block to jump!)
+    // Arrangement Ribbon along top edge
     if (sections.length > 0) {
       g.font = `700 ${8.5 * dpr}px ui-monospace, monospace`
       g.textAlign = 'left'
@@ -461,9 +460,8 @@ export class WaveformView {
         g.fillStyle = pal.bg
         g.fillRect(x0, 0, sw, ribbonH)
         g.fillStyle = pal.border
-        g.fillRect(x0, 0, sw, Math.max(1.5, 2 * dpr))
-        // subtle vertical boundary line through waveform body
-        g.strokeStyle = 'rgba(255,255,255,0.12)'
+        g.fillRect(x0, 0, sw, Math.max(2, 2.2 * dpr))
+        g.strokeStyle = light ? 'rgba(15,14,18,0.16)' : 'rgba(255,255,255,0.12)'
         g.beginPath()
         g.moveTo(x0 + 0.5, 0)
         g.lineTo(x0 + 0.5, h)
@@ -473,7 +471,7 @@ export class WaveformView {
         const vox = s.hasVocals ? ' ♪' : ''
         const fullTxt = `${s.label} ${bars}B${vox}`
         const shortTxt = `${s.label.slice(0, 3)} ${bars}B`
-        g.fillStyle = pal.fg
+        g.fillStyle = light ? '#0f0e12' : pal.fg
         if (sw >= g.measureText(fullTxt).width + 6 * dpr) {
           g.fillText(fullTxt, x0 + 3 * dpr, ribbonH / 2 + 1 * dpr)
         } else if (sw >= g.measureText(shortTxt).width + 4 * dpr) {
@@ -485,7 +483,7 @@ export class WaveformView {
       g.textBaseline = 'alphabetic'
     }
 
-    // Phrase ticks & Bar 1 gold anchor
+    // Phrase blocks & Bar 1 anchor
     if (grid && grid.bpm > 0) {
       const barDur = (60 / grid.bpm) * bpb
       const phraseDur = barDur * phraseBars
@@ -499,7 +497,7 @@ export class WaveformView {
         const x1 = Math.min(w, Math.round(te / secPerPx))
         if (x1 <= x0) continue
         if (((p % 2) + 2) % 2 === 0) {
-          g.fillStyle = 'rgba(255,255,255,0.028)'
+          g.fillStyle = light ? 'rgba(15,14,18,0.035)' : 'rgba(255,255,255,0.028)'
           g.fillRect(x0, bodyY, x1 - x0, bodyH)
         }
       }
@@ -515,7 +513,9 @@ export class WaveformView {
         if (ts < -0.001 || ts > dur) continue
         const x = Math.round(ts / secPerPx)
         const isBar1 = p === 0
-        g.strokeStyle = isBar1 ? 'rgba(251,191,36,0.85)' : 'rgba(255,255,255,0.12)'
+        g.strokeStyle = isBar1
+          ? light ? '#f05a24' : 'rgba(251,191,36,0.85)'
+          : light ? 'rgba(15,14,18,0.12)' : 'rgba(255,255,255,0.12)'
         g.lineWidth = isBar1 ? Math.max(1.5, dpr) : 1
         g.beginPath()
         g.moveTo(x + 0.5, bodyY)
@@ -525,44 +525,44 @@ export class WaveformView {
 
         if (sections.length === 0 && (isBar1 || ((p % stepPhrases) + stepPhrases) % stepPhrases === 0)) {
           const barNum = p >= 0 ? p * phraseBars + 1 : p * phraseBars
-          g.fillStyle = isBar1 ? '#fbbf24' : '#8b95a5'
+          g.fillStyle = isBar1 ? '#f05a24' : light ? '#4d4d4d' : '#8b95a5'
           g.fillText(isBar1 ? 'B1' : String(barNum), x + 3 * dpr, ribbonH - 3 * dpr)
         }
       }
     }
 
-    // Waveform body (RMS body + peak outline)
+    // Waveform body
     if (this.mode === 'stems' && this.hasStems) {
-      this.drawStemLanes(g, deck, 0, bodyY, w, bodyH, 0, secPerPx, false)
+      this.drawStemLanes(g, deck, 0, bodyY, w, bodyH, 0, secPerPx, false, light)
     } else if (this.mode === 'bands') {
-      this.drawBandLanes(g, 0, bodyY, w, bodyH, 0, secPerPx, false)
+      this.drawBandLanes(g, 0, bodyY, w, bodyH, 0, secPerPx, false, light)
     } else {
-      this.drawRgbWave(g, 0, bodyY, w, bodyH, 0, secPerPx)
+      this.drawRgbWave(g, 0, bodyY, w, bodyH, 0, secPerPx, light)
     }
 
-    // Dim veil over played portion
+    // Played portion veil
     const pos = deck.audiblePosition
     const playX = Math.max(0, Math.min(w, Math.round(pos / secPerPx)))
-    g.fillStyle = 'rgba(6,8,12,0.34)'
+    g.fillStyle = light ? 'rgba(15,14,18,0.08)' : 'rgba(6,8,12,0.34)'
     g.fillRect(0, bodyY, playX, bodyH)
 
     // Active loop region
     if (deck.activeLoop) {
       const lx0 = Math.max(0, deck.activeLoop.start / secPerPx)
       const lx1 = Math.min(w, (deck.activeLoop.start + deck.activeLoop.len) / secPerPx)
-      g.fillStyle = 'rgba(168,85,247,0.28)'
+      g.fillStyle = light ? 'rgba(124,58,237,0.18)' : 'rgba(168,85,247,0.28)'
       g.fillRect(lx0, bodyY, Math.max(2, lx1 - lx0), bodyH)
-      g.strokeStyle = '#c084fc'
+      g.strokeStyle = '#7c3aed'
       g.strokeRect(lx0 + 0.5, bodyY + 0.5, Math.max(2, lx1 - lx0), bodyH - 1)
     }
 
-    // Close-up viewport bracket
+    // Viewport bracket
     const t0 = pos - this.zoomSec * PLAYHEAD_FRAC
     const t1 = t0 + this.zoomSec
     const vx0 = Math.max(0, Math.round(t0 / secPerPx))
     const vx1 = Math.min(w, Math.round(t1 / secPerPx))
-    g.strokeStyle = deck.id === 'A' ? 'rgba(240,90,36,0.92)' : 'rgba(56,189,248,0.9)'
-    g.lineWidth = Math.max(1, dpr)
+    g.strokeStyle = deck.id === 'A' ? '#f05a24' : '#0071bb'
+    g.lineWidth = Math.max(1.5, 1.5 * dpr)
     g.strokeRect(vx0 + 0.5, bodyY + 0.5, Math.max(4, vx1 - vx0), bodyH - 1)
     g.lineWidth = 1
 
@@ -574,19 +574,19 @@ export class WaveformView {
     }
 
     // Playhead
-    g.strokeStyle = '#ffffff'
-    g.lineWidth = Math.max(1.5, 1.5 * dpr)
+    g.strokeStyle = light ? '#0f0e12' : '#ffffff'
+    g.lineWidth = Math.max(1.5, 1.8 * dpr)
     g.beginPath()
     g.moveTo(playX + 0.5, 0)
     g.lineTo(playX + 0.5, h)
     g.stroke()
     g.lineWidth = 1
 
-    // Hover inspector (Section + Bar.Beat + Timestamp)
+    // Hover inspector
     if (this.hoverOverviewFrac != null) {
       const ht = this.hoverOverviewFrac * dur
       const hx = Math.round(this.hoverOverviewFrac * w)
-      g.strokeStyle = 'rgba(255,255,255,0.6)'
+      g.strokeStyle = light ? 'rgba(15,14,18,0.55)' : 'rgba(255,255,255,0.6)'
       g.setLineDash([2 * dpr, 2 * dpr])
       g.beginPath()
       g.moveTo(hx + 0.5, ribbonH)
@@ -601,11 +601,11 @@ export class WaveformView {
       g.font = `700 ${9 * dpr}px ui-monospace, monospace`
       const tw = g.measureText(label).width + 10 * dpr
       const bx = Math.min(w - tw - 2 * dpr, Math.max(2 * dpr, hx - tw / 2))
-      g.fillStyle = 'rgba(9,11,15,0.95)'
+      g.fillStyle = light ? '#ffffff' : 'rgba(9,11,15,0.95)'
       g.fillRect(bx, 1 * dpr, tw, ribbonH - 2 * dpr)
-      g.strokeStyle = sec ? SECTION_COLORS[sec.label].border : 'rgba(255,255,255,0.35)'
+      g.strokeStyle = sec ? SECTION_COLORS[sec.label].border : light ? '#0f0e12' : 'rgba(255,255,255,0.35)'
       g.strokeRect(bx + 0.5, 1 * dpr + 0.5, tw - 1, ribbonH - 2 * dpr - 1)
-      g.fillStyle = '#f8fafc'
+      g.fillStyle = light ? '#0f0e12' : '#f8fafc'
       g.textAlign = 'center'
       g.textBaseline = 'middle'
       g.fillText(label, bx + tw / 2, ribbonH / 2 + 0.5 * dpr)
@@ -638,7 +638,7 @@ export class WaveformView {
     const ph = 11 * dpr
     g.fillStyle = color
     g.fillRect(x - pw / 2, bodyY, pw, ph)
-    g.fillStyle = '#090b0e'
+    g.fillStyle = '#ffffff'
     g.font = `700 ${8.5 * dpr}px ui-monospace, monospace`
     g.textAlign = 'center'
     g.textBaseline = 'middle'
@@ -650,7 +650,7 @@ export class WaveformView {
   // 2. Close-up Scrolling Waveform
   // -------------------------------------------------------------------------
 
-  private drawDetail(deck: Deck): void {
+  private drawDetail(deck: Deck, light: boolean): void {
     const c = this.detailCanvas
     const g = this.dg
     const w = c.width
@@ -660,19 +660,19 @@ export class WaveformView {
     const bodyY = rulerH
     const bodyH = Math.max(1, h - rulerH)
 
-    g.fillStyle = '#0c0f14'
+    g.fillStyle = light ? '#ffffff' : '#0c0f14'
     g.fillRect(0, 0, w, h)
 
-    g.fillStyle = '#11161e'
+    g.fillStyle = light ? '#f4f4f1' : '#11161e'
     g.fillRect(0, 0, w, rulerH)
-    g.strokeStyle = 'rgba(255,255,255,0.08)'
+    g.strokeStyle = light ? 'rgba(15,14,18,0.14)' : 'rgba(255,255,255,0.08)'
     g.beginPath()
     g.moveTo(0, rulerH + 0.5)
     g.lineTo(w, rulerH + 0.5)
     g.stroke()
 
     if (!this.freq) {
-      g.fillStyle = '#3a424d'
+      g.fillStyle = light ? '#8c8d94' : '#3a424d'
       g.font = `${12 * dpr}px ui-monospace, monospace`
       g.textAlign = 'center'
       g.fillText('drop a track', w / 2, bodyY + bodyH / 2 + 4 * dpr)
@@ -685,29 +685,29 @@ export class WaveformView {
     this.lastT0 = t0
     const secPerPx = this.zoomSec / w
 
-    // Subtle section tint along ruler in close-up view
+    // Subtle section top bar on ruler
     const sections = deck.track?.sections ?? []
     for (const s of sections) {
       if (s.tEnd < t0 || s.tStart > t1) continue
       const sx0 = Math.max(0, Math.round((s.tStart - t0) / secPerPx))
       const sx1 = Math.min(w, Math.round((s.tEnd - t0) / secPerPx))
       const pal = SECTION_COLORS[s.label]
-      g.fillStyle = pal.bg
-      g.fillRect(sx0, 0, Math.max(1, sx1 - sx0), Math.round(3 * dpr))
+      g.fillStyle = pal.border
+      g.fillRect(sx0, 0, Math.max(1, sx1 - sx0), Math.round(2.5 * dpr))
     }
 
     // Waveform body
     if (this.mode === 'stems' && this.hasStems) {
-      this.drawStemLanes(g, deck, 0, bodyY, w, bodyH, t0, secPerPx, true)
+      this.drawStemLanes(g, deck, 0, bodyY, w, bodyH, t0, secPerPx, true, light)
     } else if (this.mode === 'bands') {
-      this.drawBandLanes(g, 0, bodyY, w, bodyH, t0, secPerPx, true)
+      this.drawBandLanes(g, 0, bodyY, w, bodyH, t0, secPerPx, true, light)
     } else {
-      g.strokeStyle = 'rgba(255,255,255,0.07)'
+      g.strokeStyle = light ? 'rgba(15,14,18,0.09)' : 'rgba(255,255,255,0.07)'
       g.beginPath()
       g.moveTo(0, bodyY + bodyH / 2)
       g.lineTo(w, bodyY + bodyH / 2)
       g.stroke()
-      this.drawRgbWave(g, 0, bodyY, w, bodyH, t0, secPerPx)
+      this.drawRgbWave(g, 0, bodyY, w, bodyH, t0, secPerPx, light)
     }
 
     // Beatgrid & downbeat bar numbers
@@ -732,16 +732,16 @@ export class WaveformView {
           const isBar1 = k === 0
 
           if (isBar1) {
-            g.strokeStyle = 'rgba(251,191,36,0.9)'
+            g.strokeStyle = light ? '#f05a24' : 'rgba(251,191,36,0.9)'
             g.lineWidth = Math.max(1.5, 1.5 * dpr)
           } else if (isPhrase) {
-            g.strokeStyle = 'rgba(255,255,255,0.55)'
+            g.strokeStyle = light ? 'rgba(15,14,18,0.42)' : 'rgba(255,255,255,0.55)'
             g.lineWidth = Math.max(1, dpr)
           } else if (isDownbeat) {
-            g.strokeStyle = 'rgba(255,255,255,0.3)'
+            g.strokeStyle = light ? 'rgba(15,14,18,0.22)' : 'rgba(255,255,255,0.3)'
             g.lineWidth = 1
           } else {
-            g.strokeStyle = 'rgba(255,255,255,0.09)'
+            g.strokeStyle = light ? 'rgba(15,14,18,0.08)' : 'rgba(255,255,255,0.09)'
             g.lineWidth = 1
           }
           g.beginPath()
@@ -752,7 +752,11 @@ export class WaveformView {
 
           if (isDownbeat) {
             const barNum = barZero >= 0 ? barZero + 1 : barZero
-            g.fillStyle = isBar1 ? '#fbbf24' : isPhrase ? '#f1f5f9' : '#7d8590'
+            g.fillStyle = isBar1
+              ? '#f05a24'
+              : isPhrase
+                ? light ? '#0f0e12' : '#f1f5f9'
+                : light ? '#6b7280' : '#7d8590'
             g.fillText(isBar1 ? 'BAR 1' : String(barNum), x + 3 * dpr, rulerH / 2 + 1 * dpr)
           }
         }
@@ -761,7 +765,7 @@ export class WaveformView {
       g.textBaseline = 'alphabetic'
     }
 
-    // Section transition badges right on the close-up ruler
+    // Section transition badges on close-up ruler
     for (const s of sections) {
       if (s.tStart < t0 || s.tStart > t1) continue
       const x = Math.round((s.tStart - t0) / secPerPx)
@@ -777,13 +781,13 @@ export class WaveformView {
       const label = s.hasVocals ? `${s.label} ♪` : s.label
       g.font = `700 ${8.5 * dpr}px ui-monospace, monospace`
       const tw = g.measureText(label).width + 8 * dpr
-      g.fillStyle = '#090b0f'
+      g.fillStyle = light ? '#ffffff' : '#090b0f'
       g.fillRect(x, 2 * dpr, tw, rulerH - 3 * dpr)
       g.fillStyle = pal.bg
       g.fillRect(x, 2 * dpr, tw, rulerH - 3 * dpr)
       g.strokeStyle = pal.border
       g.strokeRect(x + 0.5, 2 * dpr + 0.5, tw - 1, rulerH - 4 * dpr)
-      g.fillStyle = pal.fg
+      g.fillStyle = light ? '#0f0e12' : pal.fg
       g.textAlign = 'left'
       g.textBaseline = 'middle'
       g.fillText(label, x + 4 * dpr, rulerH / 2 + 1 * dpr)
@@ -794,9 +798,9 @@ export class WaveformView {
     if (deck.activeLoop) {
       const lx0 = (deck.activeLoop.start - t0) / secPerPx
       const lx1 = lx0 + deck.activeLoop.len / secPerPx
-      g.fillStyle = 'rgba(168,85,247,0.18)'
+      g.fillStyle = light ? 'rgba(124,58,237,0.14)' : 'rgba(168,85,247,0.18)'
       g.fillRect(lx0, bodyY, lx1 - lx0, bodyH)
-      g.strokeStyle = 'rgba(192,132,252,0.9)'
+      g.strokeStyle = '#7c3aed'
       g.lineWidth = Math.max(1.5, 1.5 * dpr)
       for (const lx of [lx0, lx1]) {
         g.beginPath()
@@ -816,8 +820,8 @@ export class WaveformView {
 
     // Playhead
     const px = Math.round(PLAYHEAD_FRAC * w)
-    g.strokeStyle = '#ffffff'
-    g.lineWidth = Math.max(1.5, 1.5 * dpr)
+    g.strokeStyle = light ? '#0f0e12' : '#ffffff'
+    g.lineWidth = Math.max(1.5, 1.8 * dpr)
     g.beginPath()
     g.moveTo(px + 0.5, 0)
     g.lineTo(px + 0.5, h)
@@ -825,7 +829,7 @@ export class WaveformView {
     g.lineWidth = 1
 
     const tri = 4.5 * dpr
-    g.fillStyle = '#ffffff'
+    g.fillStyle = light ? '#0f0e12' : '#ffffff'
     g.beginPath()
     g.moveTo(px - tri, 0)
     g.lineTo(px + tri, 0)
@@ -862,7 +866,7 @@ export class WaveformView {
     const fh = rulerH - 2 * dpr
     g.fillStyle = color
     g.fillRect(x, 1 * dpr, tw, fh)
-    g.fillStyle = '#090b0e'
+    g.fillStyle = '#ffffff'
     g.textAlign = 'center'
     g.textBaseline = 'middle'
     g.fillText(label, x + tw / 2, 1 * dpr + fh / 2 + 0.5 * dpr)
@@ -870,7 +874,7 @@ export class WaveformView {
   }
 
   // -------------------------------------------------------------------------
-  // Waveform painters: RMS body (100%) + peak outline (42%) for crisp dynamics
+  // Waveform painters (RMS body + peak outline)
   // -------------------------------------------------------------------------
 
   private drawRgbWave(
@@ -880,7 +884,8 @@ export class WaveformView {
     w: number,
     h: number,
     t0: number,
-    secPerPx: number
+    secPerPx: number,
+    light: boolean
   ): void {
     const f = this.freq!
     const mip = pickMip(f.peak, f.pps, secPerPx)
@@ -892,6 +897,7 @@ export class WaveformView {
     const pps = mip.pps
     const cy = y0 + h / 2
     const maxH = h * 0.46
+    const haloAlpha = light ? 0.34 : 0.42
 
     for (let x = 0; x < w; x++) {
       const ta = t0 + x * secPerPx
@@ -902,14 +908,12 @@ export class WaveformView {
       const vLo = sampleRange(loArr, pps, ta, tb, 'avg')
       const vMid = sampleRange(midArr, pps, ta, tb, 'avg')
       const vHi = sampleRange(hiArr, pps, ta, tb, 'avg')
-      const [r, gr, b] = freqRgb(vLo, vMid, vHi)
+      const [r, gr, b] = freqRgb(vLo, vMid, vHi, light)
 
-      // Peak envelope (translucent halo — shows transients without flattening dynamics)
       const pkH = Math.max(1, pk * maxH)
-      g.fillStyle = `rgba(${r},${gr},${b},0.42)`
+      g.fillStyle = `rgba(${r},${gr},${b},${haloAlpha})`
       g.fillRect(x0 + x, cy - pkH, 1, pkH * 2)
 
-      // Solid RMS core (clearly separates -15 dB breakdowns from -6.5 dB drops!)
       const rmH = Math.max(1, Math.min(pk, rm) * maxH)
       g.fillStyle = `rgb(${r},${gr},${b})`
       g.fillRect(x0 + x, cy - rmH, 1, rmH * 2)
@@ -924,7 +928,8 @@ export class WaveformView {
     h: number,
     t0: number,
     secPerPx: number,
-    showLabels: boolean
+    showLabels: boolean,
+    light: boolean
   ): void {
     const f = this.freq!
     const mip = pickMip(f.peak, f.pps, secPerPx)
@@ -937,7 +942,7 @@ export class WaveformView {
       const ly = y0 + l * laneH
       const cy = ly + laneH / 2
       if (l > 0) {
-        g.strokeStyle = 'rgba(255,255,255,0.06)'
+        g.strokeStyle = light ? 'rgba(15,14,18,0.1)' : 'rgba(255,255,255,0.06)'
         g.beginPath()
         g.moveTo(x0, Math.round(ly) + 0.5)
         g.lineTo(x0 + w, Math.round(ly) + 0.5)
@@ -945,7 +950,8 @@ export class WaveformView {
       }
       const arr = arrays[l]
       const meta = BAND_META[l]
-      g.fillStyle = meta.color
+      const col = light ? meta.colorLight : meta.colorDark
+      g.fillStyle = col
       const maxH = laneH * 0.45
       for (let x = 0; x < w; x++) {
         const ta = t0 + x * secPerPx
@@ -956,7 +962,7 @@ export class WaveformView {
         }
       }
       if (showLabels) {
-        this.drawLaneTag(g, x0, ly, laneH, dpr, meta.short, meta.color, 1)
+        this.drawLaneTag(g, x0, ly, laneH, dpr, meta.short, col, 1, light)
       }
     }
   }
@@ -970,7 +976,8 @@ export class WaveformView {
     h: number,
     t0: number,
     secPerPx: number,
-    showLabels: boolean
+    showLabels: boolean,
+    light: boolean
   ): void {
     const laneH = h / 4
     const dpr = window.devicePixelRatio || 1
@@ -983,7 +990,7 @@ export class WaveformView {
       const gain = deck.getStemGain(s)
 
       if (s > 0) {
-        g.strokeStyle = 'rgba(255,255,255,0.07)'
+        g.strokeStyle = light ? 'rgba(15,14,18,0.1)' : 'rgba(255,255,255,0.07)'
         g.beginPath()
         g.moveTo(x0, Math.round(ly) + 0.5)
         g.lineTo(x0 + w, Math.round(ly) + 0.5)
@@ -995,8 +1002,8 @@ export class WaveformView {
         const pkArr = pyr.peaks[mip.idx]
         const rmsArr = pyr.rms[mip.idx]
         const alpha = 0.16 + 0.84 * Math.min(1, Math.max(0, gain))
-        const [r, gr, b] = meta.rgb
-        const haloStyle = `rgba(${r},${gr},${b},${(alpha * 0.42).toFixed(2)})`
+        const [r, gr, b] = light ? meta.rgb : meta.rgbDark
+        const haloStyle = `rgba(${r},${gr},${b},${(alpha * (light ? 0.34 : 0.42)).toFixed(2)})`
         const bodyStyle = `rgba(${r},${gr},${b},${alpha.toFixed(2)})`
         const maxH = laneH * 0.45
 
@@ -1016,7 +1023,7 @@ export class WaveformView {
       }
 
       if (showLabels) {
-        this.drawLaneTag(g, x0, ly, laneH, dpr, meta.short, meta.color, gain)
+        this.drawLaneTag(g, x0, ly, laneH, dpr, meta.short, meta.color, gain, light)
       }
     }
   }
@@ -1029,16 +1036,22 @@ export class WaveformView {
     dpr: number,
     text: string,
     color: string,
-    gain: number
+    gain: number,
+    light: boolean
   ): void {
     const muted = gain < 0.02
-    const tagW = 28 * dpr
+    const tagW = 29 * dpr
     const tagH = Math.min(laneH - 4 * dpr, 14 * dpr)
     const ty = ly + (laneH - tagH) / 2
-    g.fillStyle = 'rgba(11,14,20,0.82)'
+    g.fillStyle = light ? 'rgba(255,255,255,0.92)' : 'rgba(11,14,20,0.84)'
     g.fillRect(x0 + 3 * dpr, ty, tagW, tagH)
-    g.fillStyle = muted ? '#4b5563' : color
+    if (light) {
+      g.strokeStyle = 'rgba(15,14,18,0.25)'
+      g.strokeRect(x0 + 3 * dpr + 0.5, ty + 0.5, tagW - 1, tagH - 1)
+    }
+    g.fillStyle = muted ? '#9ca3af' : color
     g.fillRect(x0 + 3 * dpr, ty, 3 * dpr, tagH)
+    g.fillStyle = muted ? '#9ca3af' : light ? '#0f0e12' : color
     g.font = `700 ${8.5 * dpr}px ui-monospace, monospace`
     g.textAlign = 'left'
     g.textBaseline = 'middle'

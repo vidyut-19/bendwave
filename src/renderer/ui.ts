@@ -95,12 +95,25 @@ export interface AppRefs {
   addBtn: HTMLButtonElement
 }
 
-// Crisp Teenage Engineering–style geometric inline SVG glyphs (no OS emojis)
-const ICO_PLAY = `<svg class="ico" viewBox="0 0 12 12"><polygon points="2,1.5 11,6 2,10.5" fill="currentColor"/></svg>`
+// Crisp Teenage Engineering–style geometric inline SVG glyphs
+export const ICO_PLAY = `<svg class="ico ico-lg" viewBox="0 0 12 12"><polygon points="2.5,1.5 11,6 2.5,10.5" fill="currentColor"/></svg>`
+export const ICO_PAUSE = `<svg class="ico ico-lg" viewBox="0 0 12 12"><rect x="2.2" y="1.8" width="2.8" height="8.4" fill="currentColor"/><rect x="7" y="1.8" width="2.8" height="8.4" fill="currentColor"/></svg>`
+const ICO_CUE = `<svg class="ico ico-lg" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.2" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="6" cy="6" r="1.5" fill="currentColor"/></svg>`
+const ICO_FLAG = `<svg class="ico" viewBox="0 0 12 12"><path d="M2.5 10.5V1.8h6.5l-1.8 2.4 1.8 2.4H2.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`
 const ICO_LOCK = `<svg class="ico" viewBox="0 0 12 12"><rect x="2.2" y="5.2" width="7.6" height="5.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 5.2V3.8a2 2 0 0 1 4 0v1.4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`
 const ICO_SYNC = `<svg class="ico" viewBox="0 0 12 12"><path d="M1.5 6h9M3.8 3.5 1.5 6l2.3 2.5M8.2 3.5 10.5 6 8.2 8.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`
-const ICO_PFL = `<svg class="ico" viewBox="0 0 12 12"><path d="M2 7.5V6a4 4 0 0 1 8 0v1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="6.8" width="2.2" height="3.6" fill="currentColor"/><rect x="8.3" y="6.8" width="2.2" height="3.6" fill="currentColor"/></svg>`
+const ICO_PFL = `<svg class="ico ico-md" viewBox="0 0 12 12"><path d="M2 7.5V6a4 4 0 0 1 8 0v1.5" fill="none" stroke="currentColor" stroke-width="1.35"/><rect x="1.4" y="6.6" width="2.3" height="3.8" fill="currentColor"/><rect x="8.3" y="6.6" width="2.3" height="3.8" fill="currentColor"/></svg>`
 const ICO_REEL = `<svg class="ico reel-svg" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="7" r="1.6" fill="currentColor"/><line x1="7" y1="1.8" x2="7" y2="4.4" stroke="currentColor" stroke-width="1.3"/><line x1="2.4" y1="9.6" x2="4.7" y2="8.3" stroke="currentColor" stroke-width="1.3"/><line x1="11.6" y1="9.6" x2="9.3" y2="8.3" stroke="currentColor" stroke-width="1.3"/></svg>`
+const ICO_LOOP = `<svg class="ico" viewBox="0 0 12 12"><path d="M2 7.5V4h7.5L7.5 2M10 4.5V8H2.5L4.5 10" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`
+const ICO_X = `<svg class="ico" viewBox="0 0 12 12"><path d="M3 3l6 6M9 3L3 9" stroke="currentColor" stroke-width="1.5"/></svg>`
+const ICO_ECHO = `<svg class="ico" viewBox="0 0 12 12"><circle cx="3" cy="6" r="2.2" fill="currentColor"/><circle cx="7.2" cy="6" r="1.5" fill="currentColor" opacity="0.65"/><circle cx="10.4" cy="6" r="1" fill="currentColor" opacity="0.38"/></svg>`
+const ICO_DLY = `<svg class="ico" viewBox="0 0 12 12"><rect x="1.5" y="2.5" width="2" height="7" fill="currentColor"/><rect x="5" y="4" width="2" height="5.5" fill="currentColor" opacity="0.7"/><rect x="8.5" y="5.8" width="2" height="3.7" fill="currentColor" opacity="0.45"/></svg>`
+const ICO_VRB = `<svg class="ico" viewBox="0 0 12 12"><path d="M1.5 9.5L4 2.5l2.5 5 2-2.5 2 4.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`
+const ICO_STEMS = `<svg class="ico" viewBox="0 0 12 12"><rect x="1" y="1.5" width="10" height="1.6" fill="#d97706"/><rect x="1" y="4.2" width="10" height="1.6" fill="#e11d48"/><rect x="1" y="6.9" width="10" height="1.6" fill="#0284c7"/><rect x="1" y="9.6" width="10" height="1.6" fill="#7c3aed"/></svg>`
+const ICO_JUMP_L = `<svg class="ico" viewBox="0 0 12 12"><polygon points="6,2.2 1.5,6 6,9.8" fill="currentColor"/><polygon points="10.5,2.2 6,6 10.5,9.8" fill="currentColor"/></svg>`
+const ICO_JUMP_R = `<svg class="ico" viewBox="0 0 12 12"><polygon points="1.5,2.2 6,6 1.5,9.8" fill="currentColor"/><polygon points="6,2.2 10.5,6 6,9.8" fill="currentColor"/></svg>`
+const ICO_REC = `<svg class="ico" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.2" fill="#e11d48"/></svg>`
+const ICO_GAIN = `<svg class="ico" viewBox="0 0 12 12"><path d="M1.5 8.5h2V5h2v3.5h2V3h2v5.5h1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`
 
 const DECK_TEMPLATE = (id: 'A' | 'B') => `
   <div class="deck-head">
@@ -144,7 +157,7 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
 
     <div class="hud-actions">
       <button class="hud-btn sync" data-act="deck${id}.sync" title="Match BPM & phase + drift lock">${ICO_SYNC} SYNC</button>
-      <button class="hud-btn cuemix" data-act="deck${id}.cueMix" title="Headphone pre-listen (split-cue mode)">${ICO_PFL} PFL</button>
+      <button class="hud-btn cuemix" data-act="deck${id}.cueMix" title="Headphone cue pre-listen (split-cue mode)">${ICO_PFL}</button>
     </div>
   </div>
 
@@ -156,7 +169,7 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
     <div class="grid-bar">
       <div class="grid-group">
         <span class="bar-label">((GRID))</span>
-        <button class="mini-btn accent-gold" data-act="deck${id}.setBar1" title="Anchor Bar 1, Beat 1 at current playhead">SET 1</button>
+        <button class="mini-btn accent-gold" data-act="deck${id}.setBar1" title="Anchor Bar 1, Beat 1 at current playhead">${ICO_FLAG} 1</button>
         <button class="mini-btn" data-act="deck${id}.beatLeft" title="Shift measure downbeat 1 beat earlier">◀1</button>
         <button class="mini-btn" data-act="deck${id}.beatRight" title="Shift measure downbeat 1 beat later">1▶</button>
         <button class="mini-btn" data-act="deck${id}.nudgeBack" title="Nudge beatgrid -10ms">-ms</button>
@@ -166,13 +179,13 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
         <button class="mini-btn bpb-btn" data-act="deck${id}.beatsPerBar" title="Beats per measure">4/4</button>
         <button class="mini-btn phrase-btn" data-act="deck${id}.phraseBars" title="Phrase block size on overview">8B</button>
         <button class="mini-btn auto-cues-btn" title="Drop Hot Cues 1–4 onto Intro / Drop 1 / Break / Drop 2">AUTO CUES</button>
-        <button class="mini-btn get-stems-btn" hidden title="Separate Drums / Bass / Other / Vocals via Demucs">GET STEMS</button>
+        <button class="mini-btn get-stems-btn" hidden title="Separate Drums / Bass / Other / Vocals via Demucs">${ICO_STEMS} STEMS</button>
       </div>
       <div class="grid-group wf-controls">
         <div class="seg-group" role="group" aria-label="Waveform mode">
           <button class="seg-btn wf-rgb active" title="Unified 3-band RGB frequency waveform">RGB</button>
           <button class="seg-btn wf-bands" title="Separated Low / Mid / High lanes">3-BAND</button>
-          <button class="seg-btn wf-stems" disabled title="Separated Drums / Bass / Other / Vocals lanes">4-STEMS</button>
+          <button class="seg-btn wf-stems" disabled title="Separated Drums / Bass / Other / Vocals lanes">${ICO_STEMS} STEMS</button>
         </div>
         <button class="mini-btn zoom-out" title="Zoom out">−</button>
         <span class="zoom-val">10s</span>
@@ -213,9 +226,9 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
 
   <div class="perf-section">
     <div class="transport">
-      <button class="t-btn play" data-act="deck${id}.play">${ICO_PLAY} PLAY</button>
-      <button class="t-btn cue" data-act="deck${id}.cue">CUE</button>
-      <button class="t-btn set-cue" data-act="deck${id}.setCue">SET CUE</button>
+      <button class="t-btn play" data-act="deck${id}.play">${ICO_PLAY}<span>PLAY</span></button>
+      <button class="t-btn cue" data-act="deck${id}.cue">${ICO_CUE}<span>CUE</span></button>
+      <button class="t-btn set-cue" data-act="deck${id}.setCue" title="Set main CUE at playhead">${ICO_FLAG}<span>SET</span></button>
     </div>
 
     <div class="row hotcue-row">
@@ -228,18 +241,17 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
     </div>
 
     <div class="row loop-jump-row">
-      <span class="sec-lab">LOOP</span>
+      <span class="sec-lab" title="Beat Loop Rolls">${ICO_LOOP}</span>
       <button class="t-btn loop loop1" data-act="deck${id}.loop1" title="1-beat loop roll (hold)">1</button>
       <button class="t-btn loop loop2" data-act="deck${id}.loop2" title="2-beat loop roll (hold)">2</button>
       <button class="t-btn loop loop4" data-act="deck${id}.loop4" title="4-beat loop roll (hold)">4</button>
       <button class="t-btn loop loop8" data-act="deck${id}.loop8" title="8-beat loop roll (hold)">8</button>
-      <button class="t-btn loop-latch" data-act="deck${id}.loopLatch" title="Latching loops instead of momentary rolls">LATCH</button>
-      <button class="t-btn loop-exit" data-act="deck${id}.loopExit">EXIT</button>
+      <button class="t-btn loop-latch" data-act="deck${id}.loopLatch" title="Latching loops instead of momentary rolls">${ICO_LOCK} LATCH</button>
+      <button class="t-btn loop-exit" data-act="deck${id}.loopExit" title="Exit active loop">${ICO_X}</button>
       <span class="row-sep"></span>
-      <span class="sec-lab">JUMP</span>
-      <button class="t-btn jump jb" data-act="deck${id}.jumpBack" title="Beat jump back">◀◀</button>
+      <button class="t-btn jump jb" data-act="deck${id}.jumpBack" title="Beat jump back">${ICO_JUMP_L}</button>
       <button class="t-btn jump-size" data-act="deck${id}.jumpSize" title="Jump size in beats">4</button>
-      <button class="t-btn jump jf" data-act="deck${id}.jumpFwd" title="Beat jump forward">▶▶</button>
+      <button class="t-btn jump jf" data-act="deck${id}.jumpFwd" title="Beat jump forward">${ICO_JUMP_R}</button>
     </div>
   </div>
 
@@ -254,12 +266,12 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
     </div>
     <div class="row fx-row">
       <span class="sec-lab">FX</span>
-      <button class="t-btn fx delay" data-act="deck${id}.delay">DLY</button>
+      <button class="t-btn fx delay" data-act="deck${id}.delay">${ICO_DLY} DLY</button>
       <button class="t-btn fx frac" data-act="deck${id}.delayFrac">1/2</button>
       <label class="ctrl-lab">WET <input class="wet" type="range" min="0" max="1" step="0.01" value="0.55" /></label>
       <label class="ctrl-lab">FB <input class="fb" type="range" min="0" max="0.9" step="0.01" value="0.5" /></label>
-      <button class="t-btn fx reverb" data-act="deck${id}.reverb">VRB</button>
-      <button class="t-btn fx echo" data-act="deck${id}.echoOut">ECHO OUT</button>
+      <button class="t-btn fx reverb" data-act="deck${id}.reverb">${ICO_VRB} VRB</button>
+      <button class="t-btn fx echo" data-act="deck${id}.echoOut">${ICO_ECHO} ECHO</button>
     </div>
   </div>
 `
@@ -363,9 +375,9 @@ export function buildApp(root: HTMLElement): AppRefs {
     <div class="xf-row"><span class="xf-a">A</span><input class="xfader" type="range" min="0" max="1" step="0.01" value="0.5" /><span class="xf-b">B</span></div>
     <button class="t-btn xf-center" data-act="mix.crossCenter">CENTER</button>
     <div class="mixer-toggles">
-      <button class="t-btn split-cue" data-act="mix.splitCue" title="master on ch 1/2, headphone cue on ch 3/4">SPLIT CUE</button>
-      <button class="t-btn auto-gain" data-act="mix.autoGain" title="normalize tracks to ${-14} LUFS via trim on load">AUTO GAIN</button>
-      <button class="t-btn rec-btn" data-act="mix.record" title="record master bus to ~/Music/vibedeck/">● REC</button>
+      <button class="t-btn split-cue" data-act="mix.splitCue" title="master on ch 1/2, headphone cue on ch 3/4">${ICO_PFL} SPLIT CUE</button>
+      <button class="t-btn auto-gain" data-act="mix.autoGain" title="normalize tracks to ${-14} LUFS via trim on load">${ICO_GAIN} AUTO GAIN</button>
+      <button class="t-btn rec-btn" data-act="mix.record" title="record master bus to ~/Music/vibedeck/">${ICO_REC} REC</button>
     </div>
     <div class="row master-row"><span class="sec-lab">MST</span><input class="master" type="range" min="0" max="1" step="0.01" value="0.85" style="flex:1" /></div>
     <div class="sampler-box">

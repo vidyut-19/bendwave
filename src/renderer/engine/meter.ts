@@ -1,8 +1,12 @@
 /**
  * Super-segment LCD + Winamp-style live spectrum / VU visualizer.
- * Renders crisp discrete phosphor segments with falling peak-hold caps
- * inside recessed obsidian glass displays — zero allocations per frame.
+ * Theme-aware: crisp white-paper LCD with light-grey off segments in Day Mode
+ * (ko2-light), obsidian glass with glowing phosphor segments in Dark Mode.
  */
+
+function isLight(): boolean {
+  return document.documentElement.dataset.theme !== 'ko2-dark'
+}
 
 export class DeckMeterView {
   private g: CanvasRenderingContext2D
@@ -32,8 +36,9 @@ export class DeckMeterView {
     const w = c.width
     const h = c.height
     const dpr = window.devicePixelRatio || 1
+    const light = isLight()
 
-    g.fillStyle = '#090a0d'
+    g.fillStyle = light ? '#ffffff' : '#090a0d'
     g.fillRect(0, 0, w, h)
 
     if (level.clip) this.clipHold = 18
@@ -51,9 +56,10 @@ export class DeckMeterView {
     const barW = Math.max(1, (specW - gapX * (nBars - 1)) / nBars)
     const segH = Math.max(1, (specH - gapY * (nSegs - 1)) / nSegs)
 
-    const loCol = this.accent === 'A' ? '#f05a24' : '#38bdf8'
-    const midCol = this.accent === 'A' ? '#fab413' : '#4ade80'
-    const hiCol = '#ef4444'
+    const offCol = light ? '#eaeae5' : '#181b22'
+    const loCol = this.accent === 'A' ? '#f05a24' : light ? '#0071bb' : '#38bdf8'
+    const midCol = this.accent === 'A' ? (light ? '#d97706' : '#fab413') : light ? '#006837' : '#4ade80'
+    const hiCol = light ? '#b81d13' : '#ef4444'
 
     for (let i = 0; i < nBars; i++) {
       const v = Math.min(1, this.bins[i] * 1.15)
@@ -70,9 +76,9 @@ export class DeckMeterView {
         const isPeak = this.peaks[i] > 0.05 && s === pkSeg
         if (isLit || isPeak) {
           g.fillStyle = s >= nSegs - 1 ? hiCol : s >= nSegs - 3 ? midCol : loCol
-          g.globalAlpha = isLit ? 1 : 0.78
+          g.globalAlpha = isLit ? 1 : 0.72
         } else {
-          g.fillStyle = '#181b22'
+          g.fillStyle = offCol
           g.globalAlpha = 1
         }
         g.fillRect(x, y, barW, segH)
@@ -86,11 +92,11 @@ export class DeckMeterView {
     for (let s = 0; s < nSegs; s++) {
       const y = padY + (nSegs - 1 - s) * (segH + gapY)
       if (s === nSegs - 1) {
-        g.fillStyle = this.clipHold > 0 ? '#ef4444' : '#261417'
+        g.fillStyle = this.clipHold > 0 ? hiCol : light ? '#f5dede' : '#261417'
       } else if (s < vuLit) {
-        g.fillStyle = s >= nSegs - 3 ? '#fab413' : '#4ade80'
+        g.fillStyle = s >= nSegs - 3 ? '#f05a24' : light ? '#006837' : '#4ade80'
       } else {
-        g.fillStyle = '#181b22'
+        g.fillStyle = offCol
       }
       g.fillRect(vx, y, clipW, segH)
     }
@@ -120,8 +126,9 @@ export class MasterMeterView {
     const w = c.width
     const h = c.height
     const dpr = window.devicePixelRatio || 1
+    const light = isLight()
 
-    g.fillStyle = '#090a0d'
+    g.fillStyle = light ? '#ffffff' : '#090a0d'
     g.fillRect(0, 0, w, h)
 
     const v = Math.min(1, level.rms * 2.3)
@@ -138,14 +145,18 @@ export class MasterMeterView {
     const lit = Math.round(v * (segs - 1))
     const pkIdx = Math.min(segs - 2, Math.floor(this.peakHold * (segs - 1)))
 
+    const offCol = light ? '#eaeae5' : '#181b22'
+    const okCol = light ? '#006837' : '#4ade80'
+    const hiCol = light ? '#b81d13' : '#ef4444'
+
     for (let i = 0; i < segs; i++) {
       const x = pad + i * (sw + gap)
       if (i === segs - 1) {
-        g.fillStyle = this.clipHold > 0 ? '#ef4444' : '#2a1518'
+        g.fillStyle = this.clipHold > 0 ? hiCol : light ? '#f5dede' : '#2a1518'
       } else if (i < lit || (this.peakHold > 0.04 && i === pkIdx)) {
-        g.fillStyle = i >= segs - 4 ? '#f05a24' : i >= segs - 8 ? '#fab413' : '#4ade80'
+        g.fillStyle = i >= segs - 4 ? '#f05a24' : i >= segs - 8 ? '#fab413' : okCol
       } else {
-        g.fillStyle = '#181b22'
+        g.fillStyle = offCol
       }
       g.fillRect(x, pad, sw, sh)
     }

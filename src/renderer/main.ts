@@ -6,7 +6,7 @@ import { SyncController } from './engine/sync'
 import { STEM_ORDER, type Deck, type Track } from './engine/deck'
 import { CrateStore } from './crate/store'
 import { MidiRouter } from './midi/midi'
-import { buildApp, type AppRefs, type DeckRefs } from './ui'
+import { buildApp, ICO_PLAY, ICO_PAUSE, type AppRefs, type DeckRefs } from './ui'
 import { SoundCloudProvider } from './sources/soundcloud'
 import { registerProvider, type StreamTrackRef } from './sources/provider'
 import { delayFracLabel } from './engine/fx'
@@ -67,8 +67,9 @@ let chassisTheme: ChassisTheme =
 function applyTheme(t: ChassisTheme): void {
   chassisTheme = t
   document.documentElement.dataset.theme = t
-  refs.themeBtn.textContent = t === 'ko2-light' ? 'DARK' : 'PUTTY'
+  refs.themeBtn.textContent = t === 'ko2-light' ? 'DARK' : 'DAY'
   localStorage.setItem('vibedeck.theme', t)
+  for (const wf of waveforms.values()) wf.markDirty()
 }
 applyTheme(chassisTheme)
 refs.themeBtn.addEventListener('click', () => {
@@ -1418,7 +1419,11 @@ function tick(): void {
     const r = deckRefs(deck)
     const wf = wfFor(deck)
     const meter = deckMeters.get(deck.id)
-    r.playBtn.classList.toggle('active', deck.playing)
+    const wasPlaying = r.playBtn.classList.contains('active')
+    if (wasPlaying !== deck.playing) {
+      r.playBtn.classList.toggle('active', deck.playing)
+      r.playBtn.innerHTML = deck.playing ? `${ICO_PAUSE}<span>PAUSE</span>` : `${ICO_PLAY}<span>PLAY</span>`
+    }
     r.spinIcon.classList.toggle('spinning', deck.playing)
     if (meter) meter.draw(deck.sampleMeter(meter.binBuffer))
     r.syncBtn.classList.toggle('active', syncCtl.slave === deck.id)
@@ -1503,9 +1508,13 @@ function tick(): void {
   refs.splitCueBtn.classList.toggle('active', engine.splitCue)
   refs.autoGainBtn.classList.toggle('active', autoGain)
   refs.recBtn.classList.toggle('active', recorder.recording)
-  refs.recBtn.textContent = recorder.recording
-    ? `● ${Math.floor(recorder.elapsed / 60)}:${String(Math.floor(recorder.elapsed % 60)).padStart(2, '0')}`
-    : '● REC'
+  const recLabel = recorder.recording
+    ? `${Math.floor(recorder.elapsed / 60)}:${String(Math.floor(recorder.elapsed % 60)).padStart(2, '0')}`
+    : 'REC'
+  if (refs.recBtn.dataset.lbl !== recLabel) {
+    refs.recBtn.dataset.lbl = recLabel
+    refs.recBtn.innerHTML = `<svg class="ico" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.2" fill="${recorder.recording ? '#ffffff' : '#e11d48'}"/></svg> ${recLabel}`
+  }
   requestAnimationFrame(tick)
 }
 
