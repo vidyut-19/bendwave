@@ -1790,17 +1790,54 @@ const ACTION_IDS = [
   'deckB.setBar1', 'deckB.beatLeft', 'deckB.beatRight', 'deckB.bpmHalf', 'deckB.bpmDouble',
   'sampler.pad1', 'sampler.pad2', 'sampler.pad3', 'sampler.pad4',
   'sampler.pad5', 'sampler.pad6', 'sampler.pad7', 'sampler.pad8', 'sampler.volume',
-  'mix.crossLeft', 'mix.crossRight', 'mix.crossCenter', 'mix.crossfade', 'mix.splitCue', 'mix.autoGain',
-  'mix.record'
+  'mix.master', 'mix.crossfade', 'mix.crossLeft', 'mix.crossRight', 'mix.crossCenter', 'mix.splitCue', 'mix.autoGain',
+  'mix.record',
+  'active.volume', 'active.tempo', 'active.filter', 'active.eqLow'
 ]
 
+const FADER_TARGET_KEY = 'vibedeck.midi.fader-target'
+const savedFaderTarget = localStorage.getItem(FADER_TARGET_KEY)
+if (savedFaderTarget && Array.from(refs.midiFaderTarget.options).some((o) => o.value === savedFaderTarget)) {
+  refs.midiFaderTarget.value = savedFaderTarget
+}
+refs.midiFaderTarget.addEventListener('change', () => {
+  localStorage.setItem(FADER_TARGET_KEY, refs.midiFaderTarget.value)
+  log(`fader target → ${refs.midiFaderTarget.selectedOptions[0]?.textContent ?? refs.midiFaderTarget.value}`)
+})
+
+refs.midiFaderLearn.addEventListener('click', (e) => {
+  if (e.altKey) {
+    midi.clearBinding('fader.control')
+    log('fader binding cleared')
+    return
+  }
+  const next = midi.learning === 'fader.control' ? null : 'fader.control'
+  midi.startLearn(next)
+  if (next) log('move your K.O. II bottom-left fader up/down now to bind it (⌥-click FADER to clear)')
+})
+
+function fmtBinding(b?: MidiBinding): string {
+  if (!b) return '—'
+  if (b.type === 'pb') return `PB ch${b.channel + 1}`
+  return `${b.type.toUpperCase()} ch${b.channel + 1} #${b.control}`
+}
+
 function renderMidiPanel(): void {
+  const fb = midi.bindingFor('fader.control')
+  const fLearning = midi.learning === 'fader.control'
+  refs.midiFaderLearn.classList.toggle('learning', fLearning)
+  refs.midiFaderLearn.classList.toggle('bound', !!fb && !fLearning)
+  refs.midiFaderLearn.textContent = fLearning ? 'MOVE…' : fb ? `FADER ${fb.type === 'pb' ? 'PB' : `#${fb.control}`}` : 'SET FADER'
+  refs.midiFaderLearn.title = fb
+    ? `Bound to ${fmtBinding(fb)} · click to re-learn · ⌥-click to clear`
+    : 'Click, then slide your K.O. II bottom-left fader up/down to bind'
+
   refs.midiActions.innerHTML = ''
   for (const id of ACTION_IDS) {
     const row = document.createElement('div')
     row.className = 'midi-row' + (midi.learning === id ? ' learning' : '')
     const b = midi.bindingFor(id)
-    const label = b ? `${b.type.toUpperCase()} ch${b.channel + 1} #${b.control}` : '—'
+    const label = fmtBinding(b)
     row.innerHTML = `<span class="midi-action">${id}</span><span class="midi-binding">${label}</span>`
     const learn = document.createElement('button')
     learn.textContent = midi.learning === id ? 'waiting…' : 'learn'
@@ -1836,34 +1873,42 @@ midi.onRaw = (msg) => {
   }
   watchLastKey = key
   watchLastTs = now
-  log(`midi in: ${msg.type.toUpperCase()} ch${msg.channel + 1} ctrl ${msg.control} = ${msg.value}`)
+  const desc = msg.type === 'pb' ? `PB ch${msg.channel + 1} = ${msg.value}` : `${msg.type.toUpperCase()} ch${msg.channel + 1} ctrl ${msg.control} = ${msg.value}`
+  log(`midi in: ${desc}`)
 }
 
 refs.midiWatch.addEventListener('click', () => {
   midiWatching = !midiWatching
-  refs.midiWatch.textContent = midiWatching ? 'watching…' : 'watch midi'
+  refs.midiWatch.textContent = midiWatching ? 'WATCHING…' : 'WATCH'
   refs.midiWatch.classList.toggle('active', midiWatching)
   if (midiWatching) {
     watchLastKey = ''
-    log('midi watch ON — turn every knob/fader and press every pad you care about; the log shows what they send')
+    log('midi watch ON — move any pad, knob, or fader; the log shows what your device transmits (note: analog output knobs send no MIDI)')
   }
 })
-midi.onAction = (actionId, msg) => {
+midi.onAction = (rawActionId, msg) => {
+  const actionId = rawActionId === 'fader.control' ? refs.midiFaderTarget.value : rawActionId
   // sampler pads are velocity-sensitive
   const sp = /^sampler\.pad([1-8])$/.exec(actionId)
   if (sp) {
     if (msg.type === 'note') {
       setActionPressed(actionId, msg.value > 0)
       if (msg.value > 0) sampler.trigger(Number(sp[1]) - 1, msg.value / 127)
-    } else if (msg.type === 'cc' && msg.value > 63) {
+    } else if (msg.value > 63) {
       setActionPressed(actionId, true)
       sampler.trigger(Number(sp[1]) - 1)
       window.setTimeout(() => setActionPressed(actionId, false), 120)
     }
     return
   }
-  // continuous (CC value) actions
-  if (msg.type === 'cc') {
+  // continuous (CC or Pitch Bend) actions
+  if (msg.type === 'cc' || msg.type === 'pb') {
+    if (actionId === 'mix.master') {
+      const v = msg.value / 127
+      engine.master.gain.value = v
+      if (!refs.master.dragging) refs.master.setValue(v)
+      return
+    }
     if (actionId === 'mix.crossfade') {
       txRunner.override('xfade')
       engine.mixer.setCrossfade(msg.value / 127)
@@ -1875,7 +1920,11 @@ midi.onAction = (actionId, msg) => {
       if (!refs.samplerVol.dragging) refs.samplerVol.setValue(v)
       return
     }
-    const deck = deckOf(actionId)
+    const deck = actionId.startsWith('active.')
+      ? focusedDeck === 'B'
+        ? engine.deckB
+        : engine.deckA
+      : deckOf(actionId)
     if (deck) {
       const r = deckRefs(deck)
       const ccEqDb = (cc: number) => (cc <= 64 ? -26 + (cc / 64) * 26 : ((cc - 64) / 63) * 6)
@@ -1987,8 +2036,8 @@ function ko2Preset(): Record<string, MidiBinding> {
 }
 
 refs.midiKo2.addEventListener('click', () => {
-  midi.applyPreset(ko2Preset())
-  log('loaded K.O. II pad preset (groups A/C = deck controls, B/D = hot cue setters). faders/knobs: use learn or the wizard. tip: set pads to sound 000 on the K.O. II so they stay silent')
+  midi.applyPreset(ko2Preset(), ['fader.control', 'mix.master'])
+  log('loaded K.O. II pad preset (groups A/C = deck controls, B/D = hot cue setters; BPM left unmapped). use SET FADER above to route the bottom-left fader to Master Vol, Crossfader, Filter, or BPM anytime')
 })
 
 const WIZARD_ACTIONS = [
@@ -2002,7 +2051,7 @@ const WIZARD_ACTIONS = [
   'deckB.echoOut', 'deckB.delay', 'deckB.delayFrac', 'deckB.reverb',
   'deckB.loop1', 'deckB.loop2', 'deckB.loop4', 'deckB.loop8',
   'deckB.cueMix', 'deckB.filter', 'deckB.volume',
-  'mix.crossfade'
+  'mix.master', 'mix.crossfade'
 ]
 
 refs.midiWizard.addEventListener('click', () => {

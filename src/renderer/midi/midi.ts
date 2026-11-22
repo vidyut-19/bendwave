@@ -1,5 +1,5 @@
-export type MidiBinding = { type: 'note' | 'cc'; channel: number; control: number }
-export type MidiMessage = { type: 'note' | 'cc'; channel: number; control: number; value: number }
+export type MidiBinding = { type: 'note' | 'cc' | 'pb'; channel: number; control: number }
+export type MidiMessage = { type: 'note' | 'cc' | 'pb'; channel: number; control: number; value: number }
 
 interface SequenceHooks {
   onStep?: (action: string, index: number, total: number) => void
@@ -65,11 +65,19 @@ export class MidiRouter {
     this.onBindingsChanged?.()
   }
 
-  /** Replace the whole binding set (presets). */
-  applyPreset(preset: Record<string, MidiBinding>): void {
+  /** Replace bindings with a preset (preserving optional action IDs like learned fader). */
+  applyPreset(preset: Record<string, MidiBinding>, preserveIds: string[] = []): void {
+    const kept = new Map<string, MidiBinding>()
+    for (const id of preserveIds) {
+      const existing = this.bindings.get(id)
+      if (existing) kept.set(id, existing)
+    }
     this.bindings.clear()
     for (const [k, v] of Object.entries(preset)) {
-      if (v && (v.type === 'note' || v.type === 'cc')) this.bindings.set(k, v)
+      if (v && (v.type === 'note' || v.type === 'cc' || v.type === 'pb')) this.bindings.set(k, v)
+    }
+    for (const [k, v] of kept) {
+      if (!this.bindings.has(k)) this.bindings.set(k, v)
     }
     this.learning = null
     this.cancelSequence(false)
@@ -121,14 +129,15 @@ export class MidiRouter {
   }
 
   private parse(data: Uint8Array): MidiMessage | null {
-    if (data.length < 3) return null
+    if (data.length < 2) return null
     const status = data[0]
     const channel = status & 0x0f
-    const control = data[1]
-    const value = data[2]
-    if (status >= 0x80 && status < 0x90) return { type: 'note', channel, control, value: 0 }
-    if (status >= 0x90 && status < 0xa0) return { type: 'note', channel, control, value }
-    if (status >= 0xb0 && status < 0xc0) return { type: 'cc', channel, control, value }
+    const b1 = data[1]
+    const b2 = data.length >= 3 ? data[2] : 0
+    if (status >= 0x80 && status < 0x90) return { type: 'note', channel, control: b1, value: 0 }
+    if (status >= 0x90 && status < 0xa0) return { type: 'note', channel, control: b1, value: b2 }
+    if (status >= 0xb0 && status < 0xc0) return { type: 'cc', channel, control: b1, value: b2 }
+    if (status >= 0xe0 && status < 0xf0) return { type: 'pb', channel, control: 0, value: b2 }
     return null
   }
 
@@ -195,7 +204,7 @@ export class MidiRouter {
       if (!raw) return
       const obj = JSON.parse(raw) as Record<string, MidiBinding>
       for (const [k, v] of Object.entries(obj)) {
-        if (v && (v.type === 'note' || v.type === 'cc')) this.bindings.set(k, v)
+        if (v && (v.type === 'note' || v.type === 'cc' || v.type === 'pb')) this.bindings.set(k, v)
       }
     } catch {
       /* ignore corrupt bindings */

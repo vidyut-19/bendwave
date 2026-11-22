@@ -87,6 +87,8 @@ export interface AppRefs {
   midiWizard: HTMLButtonElement
   midiKo2: HTMLButtonElement
   midiWatch: HTMLButtonElement
+  midiFaderLearn: HTMLButtonElement
+  midiFaderTarget: HTMLSelectElement
   midiWizardStatus: HTMLElement
   tabCopilot: HTMLButtonElement
   tabPlanner: HTMLButtonElement
@@ -626,6 +628,25 @@ export function buildApp(root: HTMLElement): AppRefs {
         <button class="midi-ko2">K.O. II PRESET</button>
         <button class="midi-watch">WATCH</button>
       </div>
+      <div class="midi-fader-row" title="Bind your K.O. II bottom-left fader once, then flip what it controls anytime">
+        <button class="midi-fader-learn">FADER</button>
+        <span class="midi-fader-arrow">→</span>
+        <select class="midi-fader-target">
+          <option value="mix.master">Master Volume</option>
+          <option value="mix.crossfade">Crossfader (A ↔ B)</option>
+          <option value="active.volume">Active Deck Volume</option>
+          <option value="active.tempo">Active Deck BPM / Tempo</option>
+          <option value="active.filter">Active Deck Filter</option>
+          <option value="active.eqLow">Active Deck Low EQ</option>
+          <option value="deckA.volume">Deck A Volume</option>
+          <option value="deckB.volume">Deck B Volume</option>
+          <option value="deckA.tempo">Deck A BPM / Tempo</option>
+          <option value="deckB.tempo">Deck B BPM / Tempo</option>
+          <option value="deckA.filter">Deck A Filter</option>
+          <option value="deckB.filter">Deck B Filter</option>
+          <option value="sampler.volume">Sampler Volume</option>
+        </select>
+      </div>
       <div class="midi-wizard-status"></div>
       <div class="midi-actions"></div>
     </section>
@@ -665,6 +686,8 @@ export function buildApp(root: HTMLElement): AppRefs {
     midiWizard: footer.querySelector('.midi-wizard') as HTMLButtonElement,
     midiKo2: footer.querySelector('.midi-ko2') as HTMLButtonElement,
     midiWatch: footer.querySelector('.midi-watch') as HTMLButtonElement,
+    midiFaderLearn: footer.querySelector('.midi-fader-learn') as HTMLButtonElement,
+    midiFaderTarget: footer.querySelector('.midi-fader-target') as HTMLSelectElement,
     midiWizardStatus: footer.querySelector('.midi-wizard-status') as HTMLElement,
     tabCopilot: footer.querySelector('.tab-copilot') as HTMLButtonElement,
     tabPlanner: footer.querySelector('.tab-planner') as HTMLButtonElement,
