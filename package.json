@@ -17,6 +17,7 @@
   "build": {
     "appId": "com.vidyut19.bendwave",
     "productName": "bendwave",
+    "afterPack": "scripts/adhoc-sign.cjs",
     "directories": {
       "output": "release"
     },
