@@ -103,6 +103,9 @@ export class Deck {
   /** filter + delay + reverb insert, after EQ */
   readonly fx: FXUnit
   readonly output: GainNode
+  private analyser: AnalyserNode
+  private timeBuf: Float32Array<ArrayBuffer>
+  private freqBuf: Uint8Array<ArrayBuffer>
 
   constructor(id: 'A' | 'B', ctx: AudioContext, dest: AudioNode) {
     this.id = id
@@ -120,12 +123,49 @@ export class Deck {
     this.high.frequency.value = 4000
     this.fx = new FXUnit(ctx)
     this.output = ctx.createGain()
+    this.analyser = ctx.createAnalyser()
+    this.analyser.fftSize = 256
+    this.analyser.smoothingTimeConstant = 0.72
+    this.timeBuf = new Float32Array(new ArrayBuffer(this.analyser.fftSize * 4))
+    this.freqBuf = new Uint8Array(new ArrayBuffer(this.analyser.frequencyBinCount))
     this.preGain.connect(this.low)
     this.low.connect(this.mid)
     this.mid.connect(this.high)
     this.high.connect(this.fx.input)
     this.fx.output.connect(this.output)
+    this.output.connect(this.analyser)
     this.output.connect(dest)
+  }
+
+  /** Live post-FX/post-VOL level + 16-band spectrum for the Winamp/LCD visualizer. */
+  sampleMeter(bars16: Float32Array): { rms: number; peak: number; clip: boolean } {
+    if (!this.playing) {
+      bars16.fill(0)
+      return { rms: 0, peak: 0, clip: false }
+    }
+    this.analyser.getFloatTimeDomainData(this.timeBuf)
+    this.analyser.getByteFrequencyData(this.freqBuf)
+    let sum = 0
+    let peak = 0
+    for (let i = 0; i < this.timeBuf.length; i++) {
+      const v = Math.abs(this.timeBuf[i])
+      if (v > peak) peak = v
+      sum += v * v
+    }
+    const rms = Math.sqrt(sum / this.timeBuf.length)
+    // Map 128 FFT bins logarithmically onto 16 musical bands (sub → air)
+    const edges = [1, 2, 3, 4, 6, 8, 11, 15, 20, 27, 36, 48, 63, 82, 104, 127]
+    let prev = 0
+    for (let b = 0; b < 16; b++) {
+      const end = edges[b]
+      let m = 0
+      for (let i = prev; i <= end && i < this.freqBuf.length; i++) {
+        if (this.freqBuf[i] > m) m = this.freqBuf[i]
+      }
+      bars16[b] = m / 255
+      prev = end + 1
+    }
+    return { rms, peak, clip: peak >= 0.985 }
   }
 
   get hasAudio(): boolean {

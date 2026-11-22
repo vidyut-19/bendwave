@@ -1,6 +1,7 @@
 export interface DeckRefs {
   root: HTMLElement
   name: HTMLElement
+  spinIcon: HTMLElement
   barBeat: HTMLElement
   phraseCd: HTMLElement
   pos: HTMLElement
@@ -12,6 +13,7 @@ export interface DeckRefs {
   keyName: HTMLElement
   keylockBtn: HTMLButtonElement
   syncBtn: HTMLButtonElement
+  vuCanvas: HTMLCanvasElement
   overview: HTMLCanvasElement
   waveform: HTMLCanvasElement
   bpbBtn: HTMLButtonElement
@@ -57,11 +59,13 @@ export interface AppRefs {
   deckB: DeckRefs
   xfader: HTMLInputElement
   master: HTMLInputElement
+  masterVu: HTMLCanvasElement
   splitCueBtn: HTMLButtonElement
   autoGainBtn: HTMLButtonElement
   recBtn: HTMLButtonElement
   samplerPads: HTMLButtonElement[]
   samplerVol: HTMLInputElement
+  themeBtn: HTMLButtonElement
   memMeter: HTMLElement
   envSetup: HTMLElement
   envInstallBtn: HTMLButtonElement
@@ -91,9 +95,17 @@ export interface AppRefs {
   addBtn: HTMLButtonElement
 }
 
+// Crisp Teenage Engineering–style geometric inline SVG glyphs (no OS emojis)
+const ICO_PLAY = `<svg class="ico" viewBox="0 0 12 12"><polygon points="2,1.5 11,6 2,10.5" fill="currentColor"/></svg>`
+const ICO_LOCK = `<svg class="ico" viewBox="0 0 12 12"><rect x="2.2" y="5.2" width="7.6" height="5.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 5.2V3.8a2 2 0 0 1 4 0v1.4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`
+const ICO_SYNC = `<svg class="ico" viewBox="0 0 12 12"><path d="M1.5 6h9M3.8 3.5 1.5 6l2.3 2.5M8.2 3.5 10.5 6 8.2 8.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`
+const ICO_PFL = `<svg class="ico" viewBox="0 0 12 12"><path d="M2 7.5V6a4 4 0 0 1 8 0v1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="6.8" width="2.2" height="3.6" fill="currentColor"/><rect x="8.3" y="6.8" width="2.2" height="3.6" fill="currentColor"/></svg>`
+const ICO_REEL = `<svg class="ico reel-svg" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="7" r="1.6" fill="currentColor"/><line x1="7" y1="1.8" x2="7" y2="4.4" stroke="currentColor" stroke-width="1.3"/><line x1="2.4" y1="9.6" x2="4.7" y2="8.3" stroke="currentColor" stroke-width="1.3"/><line x1="11.6" y1="9.6" x2="9.3" y2="8.3" stroke="currentColor" stroke-width="1.3"/></svg>`
+
 const DECK_TEMPLATE = (id: 'A' | 'B') => `
   <div class="deck-head">
     <span class="deck-badge">${id}</span>
+    <span class="reel-indicator" title="Deck transport spin">${ICO_REEL}</span>
     <span class="track-name">— empty deck —</span>
     <span class="phrase-cd" hidden title="Current section & bars.beats until next transition"></span>
     <span class="bar-beat" title="Current Bar.Beat from Measure 1">—</span>
@@ -104,7 +116,7 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
   </div>
 
   <div class="deck-hud">
-    <div class="hud-card bpm-card">
+    <div class="hud-lcd bpm-card">
       <div class="hud-main">
         <span class="bpm" title="Live playback BPM">–.–</span>
         <span class="hud-unit">BPM</span>
@@ -115,31 +127,35 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
       </div>
     </div>
 
-    <div class="hud-card key-card">
+    <div class="hud-lcd key-card">
       <div class="hud-key-row">
         <span class="key-camelot" title="Camelot harmonic key">—</span>
         <div class="key-meta">
           <span class="hud-cap">KEY</span>
-          <span class="key-name">unanalyzed</span>
+          <span class="key-name">—</span>
         </div>
       </div>
-      <button class="hud-btn keylock" data-act="deck${id}.keylock" title="Lock musical key while changing tempo (Signalsmith Stretch)">🔒 KEY LOCK</button>
+      <button class="hud-btn keylock" data-act="deck${id}.keylock" title="Lock musical key while changing tempo">${ICO_LOCK} KEY</button>
+    </div>
+
+    <div class="hud-lcd vu-card" title="Live channel spectrum & RMS/clip meter">
+      <canvas class="vu-canvas"></canvas>
     </div>
 
     <div class="hud-actions">
-      <button class="hud-btn sync" data-act="deck${id}.sync" title="Match BPM & phase + drift lock">SYNC</button>
-      <button class="hud-btn cuemix" data-act="deck${id}.cueMix" title="Headphone pre-listen (split-cue mode)">🎧 CUE</button>
+      <button class="hud-btn sync" data-act="deck${id}.sync" title="Match BPM & phase + drift lock">${ICO_SYNC} SYNC</button>
+      <button class="hud-btn cuemix" data-act="deck${id}.cueMix" title="Headphone pre-listen (split-cue mode)">${ICO_PFL} PFL</button>
     </div>
   </div>
 
   <div class="visuals">
-    <div class="overview-box" title="Full-track overview — hover to measure intro bars, click/drag to jump">
+    <div class="overview-box" title="Full-track overview — click any section ribbon block to jump, hover to measure bars">
       <canvas class="overview"></canvas>
     </div>
 
     <div class="grid-bar">
       <div class="grid-group">
-        <span class="bar-label">MEASURE</span>
+        <span class="bar-label">((GRID))</span>
         <button class="mini-btn accent-gold" data-act="deck${id}.setBar1" title="Anchor Bar 1, Beat 1 at current playhead">SET 1</button>
         <button class="mini-btn" data-act="deck${id}.beatLeft" title="Shift measure downbeat 1 beat earlier">◀1</button>
         <button class="mini-btn" data-act="deck${id}.beatRight" title="Shift measure downbeat 1 beat later">1▶</button>
@@ -147,16 +163,16 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
         <button class="mini-btn" data-act="deck${id}.nudgeFwd" title="Nudge beatgrid +10ms">+ms</button>
         <button class="mini-btn" data-act="deck${id}.bpmHalf" title="Halve BPM">½×</button>
         <button class="mini-btn" data-act="deck${id}.bpmDouble" title="Double BPM">2×</button>
-        <button class="mini-btn bpb-btn" data-act="deck${id}.beatsPerBar" title="Beats per measure (click to cycle)">4/4</button>
-        <button class="mini-btn phrase-btn" data-act="deck${id}.phraseBars" title="Phrase block size on overview (click to cycle)">8B</button>
-        <button class="mini-btn auto-cues-btn" title="Drop Hot Cues 1–4 onto detected sections (Intro, Drop 1, Break, Drop 2)">AUTO CUES</button>
+        <button class="mini-btn bpb-btn" data-act="deck${id}.beatsPerBar" title="Beats per measure">4/4</button>
+        <button class="mini-btn phrase-btn" data-act="deck${id}.phraseBars" title="Phrase block size on overview">8B</button>
+        <button class="mini-btn auto-cues-btn" title="Drop Hot Cues 1–4 onto Intro / Drop 1 / Break / Drop 2">AUTO CUES</button>
         <button class="mini-btn get-stems-btn" hidden title="Separate Drums / Bass / Other / Vocals via Demucs">GET STEMS</button>
       </div>
       <div class="grid-group wf-controls">
         <div class="seg-group" role="group" aria-label="Waveform mode">
           <button class="seg-btn wf-rgb active" title="Unified 3-band RGB frequency waveform">RGB</button>
-          <button class="seg-btn wf-bands" title="Separated Low / Mid / High frequency lanes">3-BAND</button>
-          <button class="seg-btn wf-stems" disabled title="Separated Drums / Bass / Other / Vocals stem lanes">4-STEMS</button>
+          <button class="seg-btn wf-bands" title="Separated Low / Mid / High lanes">3-BAND</button>
+          <button class="seg-btn wf-stems" disabled title="Separated Drums / Bass / Other / Vocals lanes">4-STEMS</button>
         </div>
         <button class="mini-btn zoom-out" title="Zoom out">−</button>
         <span class="zoom-val">10s</span>
@@ -197,7 +213,7 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
 
   <div class="perf-section">
     <div class="transport">
-      <button class="t-btn play" data-act="deck${id}.play">▶ PLAY</button>
+      <button class="t-btn play" data-act="deck${id}.play">${ICO_PLAY} PLAY</button>
       <button class="t-btn cue" data-act="deck${id}.cue">CUE</button>
       <button class="t-btn set-cue" data-act="deck${id}.setCue">SET CUE</button>
     </div>
@@ -257,6 +273,7 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
   return {
     root,
     name: q('.track-name'),
+    spinIcon: q('.reel-indicator'),
     barBeat: q('.bar-beat'),
     phraseCd: q('.phrase-cd'),
     pos: q('.pos'),
@@ -268,6 +285,7 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
     keyName: q('.key-name'),
     keylockBtn: q('.keylock'),
     syncBtn: q('.sync'),
+    vuCanvas: q('.vu-canvas'),
     overview: q('.overview'),
     waveform: q('.waveform'),
     bpbBtn: q('.bpb-btn'),
@@ -315,9 +333,20 @@ export function buildApp(root: HTMLElement): AppRefs {
   const header = document.createElement('header')
   const addBtn = document.createElement('button')
   addBtn.className = 'add-btn'
-  addBtn.textContent = '+ add tracks…'
-  header.innerHTML =
-    '<h1>VIBEDECK</h1><span class="hint">drop audio anywhere · hover overview to count intro bars · full key map in README.md</span><span class="mem-meter"></span><span class="env-setup" hidden><button class="env-install">install analysis env</button><button class="env-install-stems" title="adds demucs + torch (~2 GB, one time)">+ stems</button></span>'
+  addBtn.textContent = '+ ADD TRACKS'
+  header.innerHTML = `
+    <div class="brand">
+      <span class="brand-tag">EP–133</span>
+      <h1>vibedeck</h1>
+      <span class="brand-ver">v1.3</span>
+    </div>
+    <span class="hint">drop tracks anywhere · click arrangement blocks to jump · keys in README</span>
+    <span class="mem-meter"></span>
+    <span class="env-setup" hidden>
+      <button class="env-install">INSTALL ENV</button>
+      <button class="env-install-stems" title="adds demucs + torch (~2 GB, one time)">+ STEMS</button>
+    </span>
+    <button class="theme-btn" title="Switch chassis finish: EP–133 Putty / Dark Booth">DARK</button>`
   header.append(addBtn)
 
   const main = document.createElement('main')
@@ -327,17 +356,20 @@ export function buildApp(root: HTMLElement): AppRefs {
   const mixer = document.createElement('section')
   mixer.className = 'mixer'
   mixer.innerHTML = `
-    <div class="panel-title mixer-title">MIXER</div>
+    <div class="panel-title mixer-title">((MIXER))</div>
+    <div class="master-vu-box" title="Live master bus VU & clip indicator">
+      <canvas class="master-vu"></canvas>
+    </div>
     <div class="xf-row"><span class="xf-a">A</span><input class="xfader" type="range" min="0" max="1" step="0.01" value="0.5" /><span class="xf-b">B</span></div>
     <button class="t-btn xf-center" data-act="mix.crossCenter">CENTER</button>
     <div class="mixer-toggles">
-      <button class="t-btn split-cue" data-act="mix.splitCue" title="master on ch 1/2, headphone cue on ch 3/4 (use an aggregate audio device)">SPLIT CUE</button>
+      <button class="t-btn split-cue" data-act="mix.splitCue" title="master on ch 1/2, headphone cue on ch 3/4">SPLIT CUE</button>
       <button class="t-btn auto-gain" data-act="mix.autoGain" title="normalize tracks to ${-14} LUFS via trim on load">AUTO GAIN</button>
-      <button class="t-btn rec-btn" data-act="mix.record" title="record the master bus to ~/Music/vibedeck/ (blocked while SoundCloud tracks are loaded)">● REC</button>
+      <button class="t-btn rec-btn" data-act="mix.record" title="record master bus to ~/Music/vibedeck/">● REC</button>
     </div>
-    <div class="row master-row"><span class="sec-lab">MASTER</span><input class="master" type="range" min="0" max="1" step="0.01" value="0.85" style="flex:1" /></div>
+    <div class="row master-row"><span class="sec-lab">MST</span><input class="master" type="range" min="0" max="1" step="0.01" value="0.85" style="flex:1" /></div>
     <div class="sampler-box">
-      <div class="panel-title">SAMPLER <span class="sampler-hint">drop · ⌥clr</span></div>
+      <div class="panel-title">((SAMPLER)) <span class="sampler-hint">drop · ⌥clr</span></div>
       <div class="sampler-pads">
         ${[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `<button class="smp" data-act="sampler.pad${n}">${n}</button>`).join('\n        ')}
       </div>
@@ -349,7 +381,7 @@ export function buildApp(root: HTMLElement): AppRefs {
   const footer = document.createElement('footer')
   footer.innerHTML = `
     <section class="crate">
-      <div class="panel-title">CRATE <span class="crate-count"></span></div>
+      <div class="panel-title">((CRATE)) <span class="crate-count"></span></div>
       <div class="crate-tools">
         <input class="crate-q" type="text" placeholder="search name, bpm, key…" />
         <select class="crate-sort">
@@ -363,7 +395,7 @@ export function buildApp(root: HTMLElement): AppRefs {
     </section>
     <section class="stream-panel copilot-panel">
       <div class="panel-tabs">
-        <button class="tab-btn tab-copilot active">CO-PILOT</button>
+        <button class="tab-btn tab-copilot active">((CO-PILOT))</button>
         <button class="tab-btn tab-stream">STREAM <span class="stream-status"></span></button>
         <div class="vibe-pills">
           <button class="vibe-btn active" data-vibe="flow" title="Match energy & groove">FLOW</button>
@@ -382,17 +414,17 @@ export function buildApp(root: HTMLElement): AppRefs {
       </div>
     </section>
     <section class="midi-panel">
-      <div class="panel-title">MIDI <span class="midi-devices"></span></div>
+      <div class="panel-title">((MIDI)) <span class="midi-devices"></span></div>
       <div class="midi-tools">
-        <button class="midi-wizard">auto-map</button>
-        <button class="midi-ko2">K.O. II preset</button>
-        <button class="midi-watch">watch</button>
+        <button class="midi-wizard">AUTO-MAP</button>
+        <button class="midi-ko2">K.O. II PRESET</button>
+        <button class="midi-watch">WATCH</button>
       </div>
       <div class="midi-wizard-status"></div>
       <div class="midi-actions"></div>
     </section>
     <section class="log">
-      <div class="panel-title">LOG</div>
+      <div class="panel-title">((LOG))</div>
       <div class="log-lines"></div>
     </section>`
 
@@ -403,11 +435,13 @@ export function buildApp(root: HTMLElement): AppRefs {
     deckB,
     xfader: mixer.querySelector('.xfader') as HTMLInputElement,
     master: mixer.querySelector('.master') as HTMLInputElement,
+    masterVu: mixer.querySelector('.master-vu') as HTMLCanvasElement,
     splitCueBtn: mixer.querySelector('.split-cue') as HTMLButtonElement,
     autoGainBtn: mixer.querySelector('.auto-gain') as HTMLButtonElement,
     recBtn: mixer.querySelector('.rec-btn') as HTMLButtonElement,
     samplerPads: Array.from(mixer.querySelectorAll<HTMLButtonElement>('.smp')),
     samplerVol: mixer.querySelector('.sampler-vol') as HTMLInputElement,
+    themeBtn: header.querySelector('.theme-btn') as HTMLButtonElement,
     memMeter: header.querySelector('.mem-meter') as HTMLElement,
     envSetup: header.querySelector('.env-setup') as HTMLElement,
     envInstallBtn: header.querySelector('.env-install') as HTMLButtonElement,

@@ -21,6 +21,8 @@ export class MidiRouter {
   bindings = new Map<string, MidiBinding>()
   learning: string | null = null
   private seq: { actions: string[]; total: number; hooks: SequenceHooks } | null = null
+  private lastSeqKey = ''
+  private lastSeqAt = 0
 
   onAction?: (actionId: string, msg: MidiMessage) => void
   onDevices?: (names: string[]) => void
@@ -138,6 +140,16 @@ export class MidiRouter {
     this.onRaw?.(msg)
 
     if (this.seq) {
+      // Ignore Note OFF releases and CC bursts from the control just bound
+      if (msg.type === 'note' && msg.value === 0) return
+      const now = performance.now()
+      const key = `${msg.type}:${msg.channel}:${msg.control}`
+      if (key === this.lastSeqKey && now - this.lastSeqAt < 450) {
+        this.lastSeqAt = now
+        return
+      }
+      this.lastSeqKey = key
+      this.lastSeqAt = now
       const actionId = this.seq.actions.shift() as string
       this.bindings.set(actionId, {
         type: msg.type,
@@ -157,6 +169,7 @@ export class MidiRouter {
     }
 
     if (this.learning) {
+      if (msg.type === 'note' && msg.value === 0) return
       this.bindings.set(this.learning, {
         type: msg.type,
         channel: msg.channel,

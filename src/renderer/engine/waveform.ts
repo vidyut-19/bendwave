@@ -561,7 +561,7 @@ export class WaveformView {
     const t1 = t0 + this.zoomSec
     const vx0 = Math.max(0, Math.round(t0 / secPerPx))
     const vx1 = Math.min(w, Math.round(t1 / secPerPx))
-    g.strokeStyle = deck.id === 'A' ? 'rgba(255,92,57,0.85)' : 'rgba(56,189,248,0.85)'
+    g.strokeStyle = deck.id === 'A' ? 'rgba(240,90,36,0.92)' : 'rgba(56,189,248,0.9)'
     g.lineWidth = Math.max(1, dpr)
     g.strokeRect(vx0 + 0.5, bodyY + 0.5, Math.max(4, vx1 - vx0), bodyH - 1)
     g.lineWidth = 1

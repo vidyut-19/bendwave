@@ -17,6 +17,7 @@ import { analyzeStructure, annotateVocals, pickAutoCues, SECTION_COLORS } from '
 import { planTransition, recommendNext, type VibeMode } from './engine/copilot'
 import { Sampler } from './engine/sampler'
 import { Recorder } from './engine/recorder'
+import { DeckMeterView, MasterMeterView } from './engine/meter'
 import type { MidiBinding } from './midi/midi'
 
 const AUDIO_EXT = /\.(wav|aiff?|flac|mp3|m4a|aac|ogg)$/i
@@ -53,8 +54,33 @@ function stopRecording(reason?: string): void {
 }
 
 const waveforms = new Map<string, WaveformView>()
+const deckMeters = new Map<string, DeckMeterView>()
+const masterMeter = new MasterMeterView(refs.masterVu)
 /** remembered pre-mute gain per deck + stem index for click-to-mute/solo */
 const stemSavedGain: Record<'A' | 'B', number[]> = { A: [1, 1, 1, 1], B: [1, 1, 1, 1] }
+
+// Hardware chassis finish toggle: EP-133 Putty ('ko2-light') ↔ Dark Booth ('ko2-dark')
+type ChassisTheme = 'ko2-light' | 'ko2-dark'
+let chassisTheme: ChassisTheme =
+  localStorage.getItem('vibedeck.theme') === 'ko2-dark' ? 'ko2-dark' : 'ko2-light'
+
+function applyTheme(t: ChassisTheme): void {
+  chassisTheme = t
+  document.documentElement.dataset.theme = t
+  refs.themeBtn.textContent = t === 'ko2-light' ? 'DARK' : 'PUTTY'
+  localStorage.setItem('vibedeck.theme', t)
+}
+applyTheme(chassisTheme)
+refs.themeBtn.addEventListener('click', () => {
+  applyTheme(chassisTheme === 'ko2-light' ? 'ko2-dark' : 'ko2-light')
+})
+
+/** Physically depress the matching on-screen keycap when triggered via K.O. II MIDI or keyboard */
+function setActionPressed(actionId: string, down: boolean): void {
+  const btn = document.querySelector<HTMLButtonElement>(`button[data-act="${actionId}"]`)
+  if (!btn) return
+  btn.classList.toggle('midi-pressed', down)
+}
 
 let focusedDeck: 'A' | 'B' = 'A'
 let userDataDir = ''
@@ -856,12 +882,14 @@ document.addEventListener('keydown', (e) => {
   if (!a) return
   e.preventDefault()
   if (e.repeat) return
+  setActionPressed(a, true)
   actionPress(a)
 })
 document.addEventListener('keyup', (e) => {
   if (isTypingTarget(e.target)) return
   const a = KEY_ACTIONS[e.code]
   if (!a) return
+  setActionPressed(a, false)
   actionRelease(a)
 })
 
@@ -1051,6 +1079,7 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   }
   wf.onModeChange = () => syncWaveformModeButtons(deck)
   waveforms.set(deck.id, wf)
+  deckMeters.set(deck.id, new DeckMeterView(r.vuCanvas, deck.id))
 
   r.root.addEventListener('pointerdown', () => {
     if (focusedDeck !== deck.id) {
@@ -1352,7 +1381,7 @@ refs.samplerPads.forEach((pad, i) => {
 
 let lastSyncUpdate = 0
 let lastFxBpmUpdate = 0
-let lastMemUpdate = 0
+let lastMemUpdate = -2000
 let lastMemEnforce = 0
 let lastCopilotUpdate = 0
 
@@ -1388,7 +1417,10 @@ function tick(): void {
   for (const deck of [engine.deckA, engine.deckB]) {
     const r = deckRefs(deck)
     const wf = wfFor(deck)
+    const meter = deckMeters.get(deck.id)
     r.playBtn.classList.toggle('active', deck.playing)
+    r.spinIcon.classList.toggle('spinning', deck.playing)
+    if (meter) meter.draw(deck.sampleMeter(meter.binBuffer))
     r.syncBtn.classList.toggle('active', syncCtl.slave === deck.id)
     r.keylockBtn.classList.toggle('active', deck.keylock)
     r.delayBtn.classList.toggle('active', deck.fx.delayOn)
@@ -1467,6 +1499,7 @@ function tick(): void {
   if (document.activeElement !== refs.xfader) {
     refs.xfader.value = String(engine.mixer.position)
   }
+  masterMeter.draw(engine.sampleMasterMeter())
   refs.splitCueBtn.classList.toggle('active', engine.splitCue)
   refs.autoGainBtn.classList.toggle('active', autoGain)
   refs.recBtn.classList.toggle('active', recorder.recording)
@@ -1565,8 +1598,14 @@ midi.onAction = (actionId, msg) => {
   // sampler pads are velocity-sensitive
   const sp = /^sampler\.pad([1-8])$/.exec(actionId)
   if (sp) {
-    if (msg.type === 'note' && msg.value > 0) sampler.trigger(Number(sp[1]) - 1, msg.value / 127)
-    else if (msg.type === 'cc' && msg.value > 63) sampler.trigger(Number(sp[1]) - 1)
+    if (msg.type === 'note') {
+      setActionPressed(actionId, msg.value > 0)
+      if (msg.value > 0) sampler.trigger(Number(sp[1]) - 1, msg.value / 127)
+    } else if (msg.type === 'cc' && msg.value > 63) {
+      setActionPressed(actionId, true)
+      sampler.trigger(Number(sp[1]) - 1)
+      window.setTimeout(() => setActionPressed(actionId, false), 120)
+    }
     return
   }
   // continuous (CC value) actions
@@ -1624,13 +1663,23 @@ midi.onAction = (actionId, msg) => {
       }
     }
   }
-  // press/release actions
+  // press/release actions (with physical on-screen keycap depression!)
   if (msg.type === 'note') {
-    if (msg.value > 0) actionPress(actionId)
-    else actionRelease(actionId)
+    if (msg.value > 0) {
+      setActionPressed(actionId, true)
+      actionPress(actionId)
+    } else {
+      setActionPressed(actionId, false)
+      actionRelease(actionId)
+    }
   } else {
-    if (msg.value > 63) actionPress(actionId)
-    else actionRelease(actionId)
+    if (msg.value > 63) {
+      setActionPressed(actionId, true)
+      actionPress(actionId)
+    } else {
+      setActionPressed(actionId, false)
+      actionRelease(actionId)
+    }
   }
 }
 

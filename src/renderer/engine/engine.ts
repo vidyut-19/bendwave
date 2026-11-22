@@ -47,12 +47,18 @@ export class DJEngine {
   private cueA: GainNode
   private cueB: GainNode
   private merger: ChannelMergerNode | null = null
+  private masterAnalyser: AnalyserNode
+  private masterTimeBuf: Float32Array<ArrayBuffer>
   splitCue = false
 
   constructor() {
     this.ctx = new AudioContext({ latencyHint: 'interactive' })
     this.master = this.ctx.createGain()
     this.master.gain.value = 0.85
+    this.masterAnalyser = this.ctx.createAnalyser()
+    this.masterAnalyser.fftSize = 256
+    this.masterTimeBuf = new Float32Array(new ArrayBuffer(this.masterAnalyser.fftSize * 4))
+    this.master.connect(this.masterAnalyser)
     this.master.connect(this.ctx.destination)
     this.mixer = new Mixer(this.ctx, this.master)
     this.deckA = new Deck('A', this.ctx, this.mixer.inputA)
@@ -68,6 +74,18 @@ export class DJEngine {
     this.deckB.output.connect(this.cueB)
     this.cueA.connect(this.cueBus)
     this.cueB.connect(this.cueBus)
+  }
+
+  sampleMasterMeter(): { rms: number; peak: number; clip: boolean } {
+    this.masterAnalyser.getFloatTimeDomainData(this.masterTimeBuf)
+    let sum = 0
+    let peak = 0
+    for (let i = 0; i < this.masterTimeBuf.length; i++) {
+      const v = Math.abs(this.masterTimeBuf[i])
+      if (v > peak) peak = v
+      sum += v * v
+    }
+    return { rms: Math.sqrt(sum / this.masterTimeBuf.length), peak, clip: peak >= 0.985 }
   }
 
   setCueMix(id: 'A' | 'B', on: boolean): void {
