@@ -481,13 +481,26 @@ export class BoeingKnob {
       this.emitUserValue(this.defaultValue)
     })
 
+    // Right-click / two-finger trackpad tap: instant Isolator Kill (EQ) or Flat Reset!
+    this.dial.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      if (this.bipolar && this.min <= -20) {
+        // DJ EQ isolator kill toggle: full kill (-26 dB) ↔ flat (0.0 dB)
+        this.emitUserValue(this._value <= this.min + 1 ? this.defaultValue : this.min)
+      } else {
+        this.emitUserValue(this.defaultValue)
+      }
+    })
+
     this.dial.addEventListener(
       'wheel',
       (e) => {
         e.preventDefault()
-        const dir = e.deltaY < 0 ? 1 : -1
-        const frac = e.shiftKey ? 0.01 : 0.035
-        const next = this.valueFromNorm(this.normOf(this._value) + dir * frac)
+        // Smooth proportional trackpad glide (MacBook Force Touch) while keeping mouse wheel steps crisp
+        const raw = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? -e.deltaY : e.deltaX
+        const scale = e.shiftKey ? 0.0008 : 0.0028
+        const deltaNorm = Math.max(-0.08, Math.min(0.08, raw * scale))
+        const next = this.valueFromNorm(this.normOf(this._value) + deltaNorm)
         this.emitUserValue(next)
       },
       { passive: false }

@@ -1302,6 +1302,8 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   r.root.addEventListener('pointerdown', () => {
     if (focusedDeck !== deck.id) {
       focusedDeck = deck.id
+      tbDeck = deck.id
+      syncTouchBar(true)
       renderCopilot()
     }
   })
@@ -1318,6 +1320,20 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
     r.rateVal.textContent = pct(deck.tempoRate)
   }
   r.rate.ondblclick = resetRate
+  r.rate.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault()
+      releaseSyncIfSlave(deck)
+      const raw = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : -e.deltaY
+      const step = Math.max(-0.008, Math.min(0.008, raw * (e.shiftKey ? 0.0001 : 0.00035)))
+      const next = Math.max(0.92, Math.min(1.08, deck.tempoRate + step))
+      deck.setTempoRate(next)
+      r.rate.value = String(((next - 1) * 100).toFixed(2))
+      r.rateVal.textContent = pct(next)
+    },
+    { passive: false }
+  )
   r.rateResetBtn.addEventListener('click', resetRate)
   r.pitchBadge.addEventListener('click', resetRate)
 
@@ -1523,9 +1539,122 @@ refs.xfader.addEventListener('input', () => {
   txRunner.override('xfade')
   engine.mixer.setCrossfade(refs.xfader.valueAsNumber)
 })
+refs.xfader.addEventListener('dblclick', () => {
+  txRunner.override('xfade')
+  engine.mixer.setCrossfade(0.5)
+})
+refs.xfader.addEventListener(
+  'wheel',
+  (e) => {
+    e.preventDefault()
+    txRunner.override('xfade')
+    const raw = Math.abs(e.deltaX) >= Math.abs(e.deltaY) ? e.deltaX : -e.deltaY
+    const delta = Math.max(-0.06, Math.min(0.06, raw * (e.shiftKey ? 0.0008 : 0.0025)))
+    const next = Math.max(0, Math.min(1, engine.mixer.position + delta))
+    engine.mixer.setCrossfade(Math.abs(next - 0.5) < 0.015 ? 0.5 : next)
+  },
+  { passive: false }
+)
 refs.master.oninput = (v) => {
   engine.master.gain.value = v
 }
+
+// ---------------------------------------------------------------------------
+// Native macOS Touch Bar Live DJ Strip (2020 M1 MacBook Pro OLED strip)
+// ---------------------------------------------------------------------------
+
+type TbParam = 'lo' | 'flt' | 'vol' | 'mid' | 'hi' | 'xf'
+let tbDeck: 'A' | 'B' = 'A'
+let tbParam: TbParam = 'flt'
+let lastTbKey = ''
+let tbLocalUntil = 0
+
+function tbVal100For(deckId: 'A' | 'B', param: TbParam): number {
+  const deck = deckId === 'B' ? engine.deckB : engine.deckA
+  if (param === 'xf') return Math.round(engine.mixer.position * 100)
+  if (param === 'vol') return Math.round(deck.volume * 100)
+  if (param === 'flt') return Math.round((deck.filterVal * 0.5 + 0.5) * 100)
+  const db = param === 'lo' ? deck.eqDb.low : param === 'mid' ? deck.eqDb.mid : deck.eqDb.high
+  return Math.round((db >= 0 ? 0.5 + (db / 6) * 0.5 : 0.5 - (-db / 26) * 0.5) * 100)
+}
+
+function syncTouchBar(force = false): void {
+  const api = window.vibedeck
+  if (!api?.touchBarSync) return
+  if (!force && performance.now() < tbLocalUntil) return
+  const deck = tbDeck === 'B' ? engine.deckB : engine.deckA
+  const value100 = tbVal100For(tbDeck, tbParam)
+  const killActive = deck.eqDb.low <= -25
+  const key = `${tbDeck}:${tbParam}:${value100}:${killActive ? 1 : 0}`
+  if (!force && key === lastTbKey) return
+  lastTbKey = key
+  api.touchBarSync({ deck: tbDeck, param: tbParam, value100, killActive })
+}
+
+window.vibedeck?.onTouchBarAction((ev) => {
+  engine.resume()
+  if (ev.kind === 'deck' && (ev.deck === 'A' || ev.deck === 'B')) {
+    tbDeck = ev.deck
+    focusedDeck = ev.deck
+    syncTouchBar(true)
+    return
+  }
+  if (ev.kind === 'param' && ev.param) {
+    tbParam = ev.param as TbParam
+    syncTouchBar(true)
+    return
+  }
+  const deckId = ev.deck ?? tbDeck
+  const deck = deckId === 'B' ? engine.deckB : engine.deckA
+  const r = deckRefs(deck)
+  const param = (ev.param as TbParam) ?? tbParam
+
+  if (ev.kind === 'kill') {
+    if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outEq' : 'inEq')
+    const killed = deck.eqDb.low <= -25
+    deck.setEqBand('low', killed ? 0 : -26)
+    syncTouchBar(true)
+    return
+  }
+  if (ev.kind === 'reset') {
+    if (param === 'xf') {
+      txRunner.override('xfade')
+      engine.mixer.setCrossfade(0.5)
+    } else if (param === 'vol') {
+      deck.setVolume(1)
+    } else if (param === 'flt') {
+      if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outFilter' : 'inFilter')
+      deck.setFilter(0)
+      updateFilterLabel(r, 0)
+    } else {
+      if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outEq' : 'inEq')
+      deck.setEqBand(param === 'lo' ? 'low' : param === 'mid' ? 'mid' : 'high', 0)
+    }
+    syncTouchBar(true)
+    return
+  }
+  if (ev.kind === 'value' && typeof ev.value100 === 'number') {
+    tbLocalUntil = performance.now() + 260
+    const raw = Math.max(0, Math.min(100, ev.value100))
+    const norm = raw / 100
+    const centered = Math.abs(raw - 50) <= 2 ? 0.5 : norm
+    if (param === 'xf') {
+      txRunner.override('xfade')
+      engine.mixer.setCrossfade(centered)
+    } else if (param === 'vol') {
+      deck.setVolume(norm)
+    } else if (param === 'flt') {
+      if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outFilter' : 'inFilter')
+      const fv = centered * 2 - 1
+      deck.setFilter(fv)
+      updateFilterLabel(r, fv)
+    } else {
+      if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outEq' : 'inEq')
+      const db = centered >= 0.5 ? ((centered - 0.5) / 0.5) * 6 : -((0.5 - centered) / 0.5) * 26
+      deck.setEqBand(param === 'lo' ? 'low' : param === 'mid' ? 'mid' : 'high', db)
+    }
+  }
+})
 
 // ---------------------------------------------------------------------------
 // sampler: pads, drag & drop, persistence
@@ -1761,6 +1890,7 @@ function tickBody(): void {
     refs.recBtn.dataset.lbl = recLabel
     refs.recBtn.innerHTML = `<svg class="ico" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.2" fill="${recorder.recording ? '#ffffff' : '#e11d48'}"/></svg> ${recLabel}`
   }
+  syncTouchBar()
 }
 
 // ---------------------------------------------------------------------------

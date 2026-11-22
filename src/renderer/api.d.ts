@@ -30,6 +30,8 @@ declare global {
     scLogout(): Promise<{ ok: boolean }>
     scGet(p: string, params?: Record<string, string>): Promise<{ ok: boolean; data?: unknown; error?: string }>
     scFetchBinary(url: string): Promise<{ ok: boolean; data?: Uint8Array; error?: string }>
+    touchBarSync(state: { deck?: 'A' | 'B'; param?: string; value100?: number; killActive?: boolean }): void
+    onTouchBarAction(cb: (payload: { kind: string; deck?: 'A' | 'B'; param?: string; value100?: number }) => void): () => void
   }
 
   interface Window {

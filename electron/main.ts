@@ -1,13 +1,129 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, TouchBar } from 'electron'
 import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import type { FileHandle } from 'node:fs/promises'
 import { registerSoundCloud } from './soundcloud'
 
+const { TouchBarButton, TouchBarSegmentedControl, TouchBarSlider } = TouchBar
 const dev = process.argv.includes('--dev')
 
 let win: BrowserWindow | null = null
+
+// ---------------------------------------------------------------------------
+// Native macOS Touch Bar Live DJ Strip (2020 M1 MacBook Pro OLED strip)
+// ---------------------------------------------------------------------------
+
+type TbParam = 'lo' | 'flt' | 'vol' | 'mid' | 'hi' | 'xf'
+const TB_PARAMS: TbParam[] = ['lo', 'flt', 'vol', 'mid', 'hi', 'xf']
+const TB_LABELS: Record<TbParam, string> = {
+  lo: 'LO',
+  flt: 'FLT',
+  vol: 'VOL',
+  mid: 'MID',
+  hi: 'HI',
+  xf: 'XF'
+}
+
+let tbDeck: 'A' | 'B' = 'A'
+let tbParam: TbParam = 'flt'
+let tbDeckBtn: Electron.TouchBarButton | null = null
+let tbParamSeg: Electron.TouchBarSegmentedControl | null = null
+let tbSlider: Electron.TouchBarSlider | null = null
+let tbKillBtn: Electron.TouchBarButton | null = null
+
+function updateTbHeader(): void {
+  if (tbDeckBtn) {
+    tbDeckBtn.label = `DECK ${tbDeck}`
+    tbDeckBtn.backgroundColor = tbDeck === 'A' ? '#f05a24' : '#0071bb'
+  }
+  if (tbSlider) {
+    tbSlider.label = tbParam === 'xf' ? 'XF A↔B' : `${tbDeck}·${TB_LABELS[tbParam]}`
+  }
+}
+
+function attachTouchBar(target: BrowserWindow): void {
+  if (process.platform !== 'darwin') return
+  const send = (payload: Record<string, unknown>) => {
+    if (!target.isDestroyed()) target.webContents.send('touchbar:action', payload)
+  }
+
+  tbDeckBtn = new TouchBarButton({
+    label: 'DECK A',
+    backgroundColor: '#f05a24',
+    click: () => {
+      tbDeck = tbDeck === 'A' ? 'B' : 'A'
+      updateTbHeader()
+      send({ kind: 'deck', deck: tbDeck })
+    }
+  })
+
+  tbParamSeg = new TouchBarSegmentedControl({
+    segmentStyle: 'separated',
+    mode: 'single',
+    selectedIndex: TB_PARAMS.indexOf(tbParam),
+    segments: TB_PARAMS.map((p) => ({ label: TB_LABELS[p] })),
+    change: (idx) => {
+      tbParam = TB_PARAMS[idx] ?? 'flt'
+      updateTbHeader()
+      send({ kind: 'param', deck: tbDeck, param: tbParam })
+    }
+  })
+
+  tbSlider = new TouchBarSlider({
+    label: 'A·FLT',
+    value: 50,
+    minValue: 0,
+    maxValue: 100,
+    change: (val) => {
+      send({ kind: 'value', deck: tbDeck, param: tbParam, value100: val })
+    }
+  })
+
+  const resetBtn = new TouchBarButton({
+    label: '0',
+    backgroundColor: '#3a3d46',
+    click: () => {
+      send({ kind: 'reset', deck: tbDeck, param: tbParam })
+    }
+  })
+
+  tbKillBtn = new TouchBarButton({
+    label: 'KILL',
+    backgroundColor: '#2b2d35',
+    click: () => {
+      send({ kind: 'kill', deck: tbDeck })
+    }
+  })
+
+  target.setTouchBar(
+    new TouchBar({
+      items: [tbDeckBtn, tbParamSeg, tbSlider, resetBtn, tbKillBtn]
+    })
+  )
+}
+
+ipcMain.on(
+  'touchbar:sync',
+  (_e, state: { deck?: 'A' | 'B'; param?: TbParam; value100?: number; killActive?: boolean }) => {
+    if (state.deck && state.deck !== tbDeck) {
+      tbDeck = state.deck
+      updateTbHeader()
+    }
+    if (state.param && state.param !== tbParam) {
+      tbParam = state.param
+      if (tbParamSeg) tbParamSeg.selectedIndex = TB_PARAMS.indexOf(tbParam)
+      updateTbHeader()
+    }
+    if (typeof state.value100 === 'number' && tbSlider) {
+      const clamped = Math.max(0, Math.min(100, Math.round(state.value100)))
+      if (tbSlider.value !== clamped) tbSlider.value = clamped
+    }
+    if (typeof state.killActive === 'boolean' && tbKillBtn) {
+      tbKillBtn.backgroundColor = state.killActive ? '#b81d13' : '#2b2d35'
+    }
+  }
+)
 
 function createWindow(): void {
   win = new BrowserWindow({
@@ -23,6 +139,7 @@ function createWindow(): void {
       nodeIntegration: false
     }
   })
+  attachTouchBar(win)
   if (dev) {
     void win.loadURL('http://localhost:5173')
   } else {

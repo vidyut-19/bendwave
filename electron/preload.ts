@@ -40,5 +40,12 @@ contextBridge.exposeInMainWorld('vibedeck', {
   scGet: (p: string, params?: Record<string, string>) =>
     ipcRenderer.invoke('sc:get', p, params) as Promise<{ ok: boolean; data?: unknown; error?: string }>,
   scFetchBinary: (url: string) =>
-    ipcRenderer.invoke('sc:fetchBinary', url) as Promise<{ ok: boolean; data?: Uint8Array; error?: string }>
+    ipcRenderer.invoke('sc:fetchBinary', url) as Promise<{ ok: boolean; data?: Uint8Array; error?: string }>,
+  touchBarSync: (state: { deck?: 'A' | 'B'; param?: string; value100?: number; killActive?: boolean }) =>
+    ipcRenderer.send('touchbar:sync', state),
+  onTouchBarAction: (cb: (payload: { kind: string; deck?: 'A' | 'B'; param?: string; value100?: number }) => void): (() => void) => {
+    const listener = (_e: unknown, payload: { kind: string; deck?: 'A' | 'B'; param?: string; value100?: number }): void => cb(payload)
+    ipcRenderer.on('touchbar:action', listener)
+    return () => ipcRenderer.removeListener('touchbar:action', listener)
+  }
 })
