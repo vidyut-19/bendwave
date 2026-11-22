@@ -210,7 +210,7 @@ async function ingest(
   name: string,
   buffer: AudioBuffer,
   tags: AudioTags = {},
-  opts: { loadIntoDeck?: boolean; runStems?: boolean } = {}
+  opts: { loadIntoDeck?: boolean; runStems?: boolean; targetDeck?: Deck } = {}
 ): Promise<Track> {
   const existing = crate.tracks.find((t) => t.path === path)
   const track: Track = existing
@@ -262,7 +262,7 @@ async function ingest(
   )
 
   if (opts.loadIntoDeck !== false) {
-    await loadTrackIntoDeck(track, buffer)
+    await loadTrackIntoDeck(track, buffer, { targetDeck: opts.targetDeck })
   }
 
   // Queue sidecar if we still need stems (when requested) or if key is still missing
@@ -281,6 +281,7 @@ function queueSidecar(track: Track): void {
   sidecarQueuedIds.add(track.id)
   sidecarQueue.push(track)
   updateStemsButtons()
+  renderCrate()
   void drainSidecarQueue()
 }
 
@@ -291,11 +292,13 @@ async function drainSidecarQueue(): Promise<void> {
     sidecarQueuedIds.delete(track.id)
     sidecarBusyId = track.id
     updateStemsButtons()
+    renderCrate()
     try {
       await enhanceWithSidecar(track)
     } finally {
       sidecarBusyId = null
       updateStemsButtons()
+      renderCrate()
     }
   }
 }
@@ -421,6 +424,37 @@ function refFromTrack(t: Track): StreamTrackRef {
   }
 }
 
+const deckLoading: Record<'A' | 'B', string | null> = { A: null, B: null }
+
+function nextFrame(): Promise<void> {
+  return new Promise((r) => requestAnimationFrame(() => r()))
+}
+
+function syncDeckStatus(deck: Deck): void {
+  const r = deckRefs(deck)
+  const loadMsg = deckLoading[deck.id]
+  if (loadMsg) {
+    r.statusBadge.textContent = loadMsg
+    r.statusBadge.classList.remove('stems')
+    r.statusBadge.hidden = false
+    return
+  }
+  const t = deck.track
+  if (t && sidecarBusyId === t.id) {
+    r.statusBadge.textContent = 'STEMS…'
+    r.statusBadge.classList.add('stems')
+    r.statusBadge.hidden = false
+    return
+  }
+  if (t && sidecarQueuedIds.has(t.id)) {
+    r.statusBadge.textContent = 'STEMS QUEUED'
+    r.statusBadge.classList.add('stems')
+    r.statusBadge.hidden = false
+    return
+  }
+  r.statusBadge.hidden = true
+}
+
 async function loadTrackIntoDeck(
   track: Track,
   buffer?: AudioBuffer,
@@ -439,6 +473,9 @@ async function loadTrackIntoDeck(
           ? engine.deckB
           : engine.deckA)
   releaseSyncIfSlave(deck)
+  deckLoading[deck.id] = track.source === 'soundcloud' ? 'STREAMING…' : 'LOADING…'
+  syncDeckStatus(deck)
+  if (!buffer) await nextFrame()
   try {
     let buf = buffer
     let tags: AudioTags = {}
@@ -519,6 +556,9 @@ async function loadTrackIntoDeck(
   } catch (e) {
     log(`could not load "${track.name}": ${String(e)}`)
     return null
+  } finally {
+    deckLoading[deck.id] = null
+    syncDeckStatus(deck)
   }
 }
 
@@ -918,17 +958,90 @@ document.addEventListener('keyup', (e) => {
 })
 
 // ---------------------------------------------------------------------------
-// file input: drag & drop + browse
+// file input: drag & drop (files + recursive folders) + browse + progress bar
 // ---------------------------------------------------------------------------
 
+let dragDepth = 0
+let importGen = 0
+let importHideTimer: number | null = null
+
+function hideDropOverlay(): void {
+  dragDepth = 0
+  refs.dropOverlay.hidden = true
+}
+
+function showImportBar(pctVal: number, text: string, pulsing = false): void {
+  if (importHideTimer != null) {
+    window.clearTimeout(importHideTimer)
+    importHideTimer = null
+  }
+  refs.importBar.hidden = false
+  refs.importFill.style.width = `${Math.max(0, Math.min(100, pctVal))}%`
+  refs.importText.textContent = text
+  refs.importBar.classList.toggle('is-loading', pulsing)
+}
+
+function finishImportBar(text?: string, delayMs = 900): void {
+  const gen = ++importGen
+  refs.importBar.classList.remove('is-loading')
+  if (text) {
+    refs.importFill.style.width = '100%'
+    refs.importText.textContent = text
+    importHideTimer = window.setTimeout(() => {
+      if (gen === importGen) refs.importBar.hidden = true
+    }, delayMs)
+  } else {
+    refs.importBar.hidden = true
+  }
+}
+
+function dropTargetDeck(target: EventTarget | null): Deck | undefined {
+  if (!(target instanceof Node)) return undefined
+  if (refs.deckA.root.contains(target)) return engine.deckA
+  if (refs.deckB.root.contains(target)) return engine.deckB
+  return undefined
+}
+
+document.addEventListener('dragenter', (e) => {
+  if (!e.dataTransfer?.types?.includes('Files')) return
+  dragDepth++
+  refs.dropOverlay.hidden = false
+})
+document.addEventListener('dragleave', () => {
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) refs.dropOverlay.hidden = true
+})
+window.addEventListener('blur', hideDropOverlay)
 document.addEventListener('dragover', (e) => e.preventDefault())
 document.addEventListener('drop', (e) => {
   e.preventDefault()
+  hideDropOverlay()
   const files = Array.from(e.dataTransfer?.files ?? [])
-  void addFiles(files)
+  if (!files.length) return
+  const targetDeck = dropTargetDeck(e.target)
+  const api = window.vibedeck
+  if (api?.expandPaths) {
+    const rawPaths = files.map((f) => api.filePathFor(f)).filter(Boolean)
+    if (rawPaths.length) {
+      void (async () => {
+        importGen++
+        showImportBar(8, 'SCANNING DROPPED FILES / FOLDERS…', true)
+        await nextFrame()
+        const expanded = await api.expandPaths(rawPaths)
+        if (!expanded.length) {
+          finishImportBar()
+          log('no supported audio files found in dropped item(s)')
+          return
+        }
+        await addPaths(expanded, expanded.length === 1 ? targetDeck : undefined)
+      })()
+      return
+    }
+  }
+  void addFiles(files, files.length === 1 ? targetDeck : undefined)
 })
 
-async function addFiles(files: File[]): Promise<void> {
+async function addFiles(files: File[], targetDeck?: Deck): Promise<void> {
   const valid = files.filter((f) => {
     if (!AUDIO_EXT.test(f.name)) {
       log(`skipped ${f.name} (unsupported type)`)
@@ -936,51 +1049,97 @@ async function addFiles(files: File[]): Promise<void> {
     }
     return true
   })
+  if (!valid.length) return
+  importGen++
   const batch = valid.length >= 3
-  if (batch) log(`batch importing ${valid.length} tracks (ID3/Serato tags + arrangement + vibe)…`)
-  for (const f of valid) {
+  if (batch) log(`batch importing ${valid.length} tracks (ID3/Serato tags + arrangement + fingerprint)…`)
+  let okCount = 0
+  for (let i = 0; i < valid.length; i++) {
+    const f = valid[i]
+    const clean = f.name.replace(/\.[^.]+$/, '')
+    const pctVal = Math.round(((i + 0.15) / valid.length) * 100)
+    showImportBar(
+      pctVal,
+      valid.length > 1 ? `IMPORTING ${i + 1} / ${valid.length} · ${clean}` : `LOADING · ${clean}…`,
+      valid.length === 1
+    )
+    await nextFrame()
     try {
       const { buffer, tags } = await decodeFileWithTags(f)
       const path = window.vibedeck?.filePathFor(f) ?? f.name
       const shouldLoad = !batch || !engine.deckA.hasAudio || !engine.deckB.hasAudio
-      await ingest(path, f.name.replace(/\.[^.]+$/, ''), buffer, tags, {
+      await ingest(path, clean, buffer, tags, {
         loadIntoDeck: shouldLoad,
-        runStems: !batch
+        runStems: !batch,
+        targetDeck: valid.length === 1 ? targetDeck : undefined
       })
+      okCount++
     } catch (e) {
       log(`failed to load ${f.name}: ${String(e)}`)
     }
   }
-  if (batch) {
-    renderCopilot()
-    log(`batch import done — ${valid.length} tracks ready in crate + Co-Pilot`)
+  renderCopilot()
+  if (valid.length > 1) {
+    finishImportBar(`IMPORTED ${okCount} / ${valid.length} TRACKS ✓`, 1200)
+    log(`batch import done — ${okCount} tracks ready in crate + Co-Pilot + Set Plan`)
+  } else {
+    finishImportBar()
   }
 }
 
-async function addPaths(paths: string[]): Promise<void> {
+async function addPaths(paths: string[], targetDeck?: Deck): Promise<void> {
+  if (!paths.length) return
+  importGen++
   const batch = paths.length >= 3
-  if (batch) log(`batch importing ${paths.length} tracks (ID3/Serato tags + arrangement + vibe)…`)
-  for (const p of paths) {
+  if (batch) log(`batch importing ${paths.length} tracks (ID3/Serato tags + arrangement + fingerprint)…`)
+  let okCount = 0
+  for (let i = 0; i < paths.length; i++) {
+    const p = paths[i]
+    const clean = basename(p).replace(/\.[^.]+$/, '')
+    const pctVal = Math.round(((i + 0.15) / paths.length) * 100)
+    showImportBar(
+      pctVal,
+      paths.length > 1 ? `IMPORTING ${i + 1} / ${paths.length} · ${clean}` : `LOADING · ${clean}…`,
+      paths.length === 1
+    )
+    await nextFrame()
     try {
       const { buffer, tags } = await decodePathWithTags(p)
       const shouldLoad = !batch || !engine.deckA.hasAudio || !engine.deckB.hasAudio
-      await ingest(p, basename(p).replace(/\.[^.]+$/, ''), buffer, tags, {
+      await ingest(p, clean, buffer, tags, {
         loadIntoDeck: shouldLoad,
-        runStems: !batch
+        runStems: !batch,
+        targetDeck: paths.length === 1 ? targetDeck : undefined
       })
+      okCount++
     } catch (e) {
       log(`failed to load ${basename(p)}: ${String(e)}`)
     }
   }
-  if (batch) {
-    renderCopilot()
-    log(`batch import done — ${paths.length} tracks ready in crate + Co-Pilot`)
+  renderCopilot()
+  if (paths.length > 1) {
+    finishImportBar(`IMPORTED ${okCount} / ${paths.length} TRACKS ✓`, 1200)
+    log(`batch import done — ${okCount} tracks ready in crate + Co-Pilot + Set Plan`)
+  } else {
+    finishImportBar()
   }
 }
 
 refs.addBtn.addEventListener('click', async () => {
-  const paths = (await window.vibedeck?.selectAudio()) ?? []
-  if (paths.length) void addPaths(paths)
+  const api = window.vibedeck
+  if (!api) return
+  const picked = (await api.selectAudio()) ?? []
+  if (!picked.length) return
+  importGen++
+  showImportBar(8, 'SCANNING SELECTED FILES / FOLDERS…', true)
+  await nextFrame()
+  const expanded = api.expandPaths ? await api.expandPaths(picked) : picked
+  if (!expanded.length) {
+    finishImportBar()
+    log('no supported audio files found in selected folder(s)')
+    return
+  }
+  void addPaths(expanded)
 })
 
 // ---------------------------------------------------------------------------
@@ -1068,8 +1227,12 @@ function updateStemsButtons(): void {
       const running = sidecarBusyId === t.id
       const queued = sidecarQueuedIds.has(t.id)
       r.getStemsBtn.disabled = running || queued
+      r.getStemsBtn.classList.toggle('is-loading', running || queued)
       r.getStemsBtn.textContent = running ? 'STEMS…' : queued ? 'QUEUED' : 'GET STEMS'
+    } else {
+      r.getStemsBtn.classList.remove('is-loading')
     }
+    syncDeckStatus(deck)
   }
 }
 
@@ -1311,6 +1474,8 @@ function renderCrate(): void {
       parts.push(`<span class="crate-key" style="background:${col}">${escapeHtml(t.camelot)}</span>`)
     }
     if (t.stems) parts.push('<span class="crate-tag">stems</span>')
+    else if (sidecarBusyId === t.id) parts.push('<span class="crate-tag stems-busy is-loading">stems…</span>')
+    else if (sidecarQueuedIds.has(t.id)) parts.push('<span class="crate-tag">queued</span>')
     if (t.hotCues?.some((h) => h != null)) parts.push('<span class="crate-tag cues">cues</span>')
     li.innerHTML = `<span class="crate-name">${escapeHtml(t.name)}</span><span class="crate-meta">${parts.join('')}</span>`
     const mb = t.pcmBytes ? `${(t.pcmBytes / (1024 * 1024)).toFixed(0)}MB` : ''
@@ -1394,12 +1559,14 @@ refs.samplerPads.forEach((pad, i) => {
   pad.addEventListener('drop', (e) => {
     e.preventDefault()
     e.stopPropagation()
+    hideDropOverlay()
     const f = e.dataTransfer?.files?.[0]
     if (!f || !AUDIO_EXT.test(f.name)) {
       log(`sampler: unsupported file (want wav/mp3/flac/aiff)`)
       return
     }
     void (async () => {
+      pad.classList.add('is-loading')
       try {
         const buffer = await decodeFile(f)
         const path = window.vibedeck?.filePathFor(f) ?? f.name
@@ -1411,6 +1578,8 @@ refs.samplerPads.forEach((pad, i) => {
         log(`sampler slot ${i + 1} ← "${name}"`)
       } catch (err) {
         log(`sampler: failed to load ${f.name}: ${String(err)}`)
+      } finally {
+        pad.classList.remove('is-loading')
       }
     })()
   })
@@ -2103,16 +2272,24 @@ refs.scConnect.addEventListener('click', async () => {
     log('soundcloud: copy soundcloud.config.example.json → soundcloud.config.json with your app credentials (docs/streaming.md)')
     return
   }
-  if (sc.loggedIn) {
-    await sc.logout()
-    log('soundcloud disconnected')
-  } else {
-    log('soundcloud: opening browser for OAuth sign-in…')
-    const r = await sc.login()
-    if (r.ok) log(`soundcloud connected${r.username ? ` as @${r.username}` : ''}`)
-    else log(`soundcloud login failed: ${r.error ?? 'unknown error'}`)
+  refs.scConnect.disabled = true
+  refs.scConnect.classList.add('is-loading')
+  try {
+    if (sc.loggedIn) {
+      refs.scConnect.textContent = 'DISCONNECTING…'
+      await sc.logout()
+      log('soundcloud disconnected')
+    } else {
+      refs.scConnect.textContent = 'CONNECTING…'
+      log('soundcloud: opening browser for OAuth sign-in…')
+      const r = await sc.login()
+      if (r.ok) log(`soundcloud connected${r.username ? ` as @${r.username}` : ''}`)
+      else log(`soundcloud login failed: ${r.error ?? 'unknown error'}`)
+    }
+  } finally {
+    refs.scConnect.classList.remove('is-loading')
+    updateStreamPanel()
   }
-  updateStreamPanel()
 })
 
 refs.scQuery.addEventListener('keydown', (e) => {
@@ -2125,11 +2302,13 @@ refs.scQuery.addEventListener('keydown', (e) => {
     return
   }
   void (async () => {
+    refs.streamResults.innerHTML = `<li class="stream-loading is-loading">SEARCHING "${escapeHtml(q)}"…</li>`
     try {
       const results = await sc.search(q)
       renderStreamResults(results)
       log(`soundcloud: ${results.length} results for "${q}"`)
     } catch (err) {
+      refs.streamResults.innerHTML = ''
       log(`soundcloud search failed: ${String(err)}`)
     }
   })()
@@ -2149,6 +2328,15 @@ function renderStreamResults(refsList: StreamTrackRef[]): void {
 }
 
 async function addStreamTrack(ref: StreamTrackRef): Promise<void> {
+  const target = !engine.deckA.hasAudio
+    ? engine.deckA
+    : !engine.deckB.hasAudio
+      ? engine.deckB
+      : focusedDeck === 'B'
+        ? engine.deckB
+        : engine.deckA
+  deckLoading[target.id] = 'STREAMING…'
+  syncDeckStatus(target)
   try {
     log(`soundcloud: streaming "${ref.title}"…`)
     const r = await sc.resolve(ref)
@@ -2175,9 +2363,11 @@ async function addStreamTrack(ref: StreamTrackRef): Promise<void> {
     registerSCMemory(ref.id, track.name, buffer)
     crate.upsert(track)
     renderCrate()
-    await loadTrackIntoDeck(track, buffer)
+    await loadTrackIntoDeck(track, buffer, { targetDeck: target })
     log(`added "${track.name}" (SoundCloud · beatgrid ${track.grid.bpm || '?'} BPM · stems off per ToS)`)
   } catch (e) {
+    deckLoading[target.id] = null
+    syncDeckStatus(target)
     log(`soundcloud: ${String(e)}`)
   }
 }
@@ -2196,6 +2386,12 @@ async function refreshEnvStatus(): Promise<void> {
   refs.envInstallStemsBtn.hidden = s.demucs
   refs.envInstallBtn.disabled = s.installing
   refs.envInstallStemsBtn.disabled = s.installing
+  refs.envInstallBtn.classList.toggle('is-loading', s.installing)
+  refs.envInstallStemsBtn.classList.toggle('is-loading', s.installing)
+  if (!s.installing) {
+    refs.envInstallBtn.textContent = 'INSTALL ENV'
+    refs.envInstallStemsBtn.textContent = '+ STEMS'
+  }
   updateStemsButtons()
   if (s.librosa && s.demucs) log('analysis env ready (librosa + demucs)')
 }
@@ -2203,6 +2399,8 @@ async function refreshEnvStatus(): Promise<void> {
 refs.envInstallBtn.addEventListener('click', () => {
   void (async () => {
     refs.envInstallBtn.disabled = true
+    refs.envInstallBtn.classList.add('is-loading')
+    refs.envInstallBtn.textContent = 'INSTALLING…'
     const r = await window.vibedeck?.envInstall()
     log(r?.ok ? 'analysis env installed ✓ (BPM/key via librosa)' : `env install failed: ${r?.error}`)
     await refreshEnvStatus()
@@ -2212,6 +2410,8 @@ refs.envInstallBtn.addEventListener('click', () => {
 refs.envInstallStemsBtn.addEventListener('click', () => {
   void (async () => {
     refs.envInstallStemsBtn.disabled = true
+    refs.envInstallStemsBtn.classList.add('is-loading')
+    refs.envInstallStemsBtn.textContent = 'INSTALLING…'
     const r = await window.vibedeck?.envInstall({ stems: true })
     log(r?.ok ? 'stems support installed ✓ (demucs)' : `stems install failed: ${r?.error}`)
     await refreshEnvStatus()
@@ -2254,7 +2454,7 @@ void (async () => {
       ? 'midi ready — click "learn" next to an action, then touch a control'
       : 'web midi unavailable in this build'
   )
-  log('drop tracks anywhere (or "add tracks…") — bpm runs instantly, stems follow via sidecar')
+  log('drop tracks or folders anywhere (or "+ ADD / FOLDER") — tags, arrangement & fingerprint run instantly')
   log('SYNC engages a drift lock — press SYNC again to release it')
   window.addEventListener('pointerdown', () => engine.resume())
   requestAnimationFrame(tick)

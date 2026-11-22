@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 contextBridge.exposeInMainWorld('vibedeck', {
   paths: () => ipcRenderer.invoke('app:paths') as Promise<{ userData: string }>,
   selectAudio: () => ipcRenderer.invoke('dialog:selectAudio') as Promise<string[]>,
+  expandPaths: (paths: string[]) => ipcRenderer.invoke('fs:expandPaths', paths) as Promise<string[]>,
   readAudio: (p: string) => ipcRenderer.invoke('fs:readAudio', p) as Promise<Uint8Array>,
   filePathFor: (f: File) => webUtils.getPathForFile(f),
   crateLoad: () => ipcRenderer.invoke('crate:load'),

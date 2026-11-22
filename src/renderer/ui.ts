@@ -1,6 +1,7 @@
 export interface DeckRefs {
   root: HTMLElement
   name: HTMLElement
+  statusBadge: HTMLElement
   fpTags: HTMLElement
   spinIcon: HTMLElement
   barBeat: HTMLElement
@@ -67,6 +68,10 @@ export interface AppRefs {
   samplerPads: HTMLButtonElement[]
   samplerVol: HTMLInputElement
   themeBtn: HTMLButtonElement
+  importBar: HTMLElement
+  importFill: HTMLElement
+  importText: HTMLElement
+  dropOverlay: HTMLElement
   memMeter: HTMLElement
   envSetup: HTMLElement
   envInstallBtn: HTMLButtonElement
@@ -127,6 +132,7 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
     <span class="deck-badge">${id}</span>
     <span class="reel-indicator" title="Deck transport spin">${ICO_REEL}</span>
     <span class="track-name">— empty deck —</span>
+    <span class="deck-status" hidden></span>
     <span class="fp-tags" hidden title="Acoustic fingerprint: sub anatomy · groove · swing"></span>
     <span class="phrase-cd" hidden title="Current section & bars.beats until next transition"></span>
     <span class="bar-beat" title="Current Bar.Beat from Measure 1">—</span>
@@ -294,6 +300,7 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
   return {
     root,
     name: q('.track-name'),
+    statusBadge: q('.deck-status'),
     fpTags: q('.fp-tags'),
     spinIcon: q('.reel-indicator'),
     barBeat: q('.bar-beat'),
@@ -355,14 +362,15 @@ export function buildApp(root: HTMLElement): AppRefs {
   const header = document.createElement('header')
   const addBtn = document.createElement('button')
   addBtn.className = 'add-btn'
-  addBtn.textContent = '+ ADD TRACKS'
+  addBtn.textContent = '+ ADD / FOLDER'
+  addBtn.title = 'Add audio files or an entire folder to your crate'
   header.innerHTML = `
     <div class="brand">
       <span class="brand-tag">EP–133</span>
       <h1>vibedeck</h1>
       <span class="brand-ver">v1.4</span>
     </div>
-    <span class="hint">drop tracks anywhere · click arrangement blocks to jump · keys in README</span>
+    <span class="hint">drop tracks or folders anywhere · click arrangement blocks to jump</span>
     <span class="mem-meter"></span>
     <span class="env-setup" hidden>
       <button class="env-install">INSTALL ENV</button>
@@ -370,6 +378,16 @@ export function buildApp(root: HTMLElement): AppRefs {
     </span>
     <button class="theme-btn" title="Switch chassis finish: EP–133 Putty / Dark Booth">DARK</button>`
   header.append(addBtn)
+
+  const importBar = document.createElement('div')
+  importBar.className = 'import-bar'
+  importBar.hidden = true
+  importBar.innerHTML = '<div class="import-fill"></div><span class="import-text"></span>'
+
+  const dropOverlay = document.createElement('div')
+  dropOverlay.className = 'drop-overlay'
+  dropOverlay.hidden = true
+  dropOverlay.innerHTML = '<div class="drop-card">DROP AUDIO FILES OR FOLDER TO IMPORT</div>'
 
   const main = document.createElement('main')
   const deckA = buildDeck('A')
@@ -462,7 +480,7 @@ export function buildApp(root: HTMLElement): AppRefs {
       <div class="log-lines"></div>
     </section>`
 
-  root.append(header, main, footer)
+  root.append(header, importBar, main, footer, dropOverlay)
 
   return {
     deckA,
@@ -476,6 +494,10 @@ export function buildApp(root: HTMLElement): AppRefs {
     samplerPads: Array.from(mixer.querySelectorAll<HTMLButtonElement>('.smp')),
     samplerVol: mixer.querySelector('.sampler-vol') as HTMLInputElement,
     themeBtn: header.querySelector('.theme-btn') as HTMLButtonElement,
+    importBar,
+    importFill: importBar.querySelector('.import-fill') as HTMLElement,
+    importText: importBar.querySelector('.import-text') as HTMLElement,
+    dropOverlay,
     memMeter: header.querySelector('.mem-meter') as HTMLElement,
     envSetup: header.querySelector('.env-setup') as HTMLElement,
     envInstallBtn: header.querySelector('.env-install') as HTMLButtonElement,

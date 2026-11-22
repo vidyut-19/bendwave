@@ -4,6 +4,7 @@ declare global {
   export interface VibedeckApi {
     paths(): Promise<{ userData: string }>
     selectAudio(): Promise<string[]>
+    expandPaths(paths: string[]): Promise<string[]>
     readAudio(p: string): Promise<Uint8Array>
     filePathFor(f: File): string
     crateLoad(): Promise<{ version?: number; tracks?: unknown[] }>

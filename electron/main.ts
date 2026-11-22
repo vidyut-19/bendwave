@@ -54,13 +54,42 @@ ipcMain.handle('app:paths', () => ({ userData: app.getPath('userData') }))
 ipcMain.handle('dialog:selectAudio', async () => {
   if (!win) return []
   const r = await dialog.showOpenDialog(win, {
-    title: 'Add tracks to crate',
+    title: 'Add tracks or folders to crate',
     filters: [
       { name: 'Audio', extensions: ['wav', 'aiff', 'aif', 'flac', 'mp3', 'm4a', 'aac', 'ogg'] }
     ],
-    properties: ['openFile', 'multiSelections']
+    properties: ['openFile', 'openDirectory', 'multiSelections']
   })
   return r.canceled ? [] : r.filePaths
+})
+
+const AUDIO_FILE_RE = /\.(wav|aiff?|flac|mp3|m4a|aac|ogg)$/i
+
+async function collectAudio(p: string, out: string[], depth = 0): Promise<void> {
+  if (depth > 4) return
+  try {
+    const st = await fs.stat(p)
+    if (st.isDirectory()) {
+      const entries = (await fs.readdir(p)).sort((a, b) => a.localeCompare(b))
+      for (const name of entries) {
+        if (name.startsWith('.')) continue
+        await collectAudio(path.join(p, name), out, depth + 1)
+      }
+    } else if (st.isFile() && AUDIO_FILE_RE.test(p)) {
+      out.push(p)
+    }
+  } catch {
+    /* unreadable entry */
+  }
+}
+
+/** Expands any mix of dropped files & folders recursively into audio file paths. */
+ipcMain.handle('fs:expandPaths', async (_e, paths: string[]) => {
+  const out: string[] = []
+  for (const p of paths) {
+    if (p) await collectAudio(p, out, 0)
+  }
+  return out
 })
 
 ipcMain.handle('fs:readAudio', async (_e, p: string) => {
