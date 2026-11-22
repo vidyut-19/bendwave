@@ -6,6 +6,10 @@
  * parallel (wet gains gate them). Delay time derives from the deck's effective
  * BPM × beat fraction, updated live so it stays locked while the pitch fader
  * moves.
+ *
+ * flush() cleanly zeroes and rebuilds the delay & convolver nodes (reusing the
+ * cached impulse response) so pausing or loading a new track never leaves
+ * runaway feedback tails or bleeds stale echoes back on resume.
  */
 
 const MAX_DELAY = 3.9
@@ -37,11 +41,15 @@ export class FXUnit {
   readonly output: GainNode
   private lp: BiquadFilterNode
   private hp: BiquadFilterNode
-  private delay: DelayNode
+  private delay!: DelayNode
   private fb: GainNode
   private delayWet: GainNode
-  private reverb: ConvolverNode
+  private ir: AudioBuffer
+  private reverb!: ConvolverNode
   private reverbWet: GainNode
+  private lastBpm = 120
+  private lastDelaySec = 0.25
+  private flushed = false
 
   delayOn = false
   reverbOn = false
@@ -49,6 +57,7 @@ export class FXUnit {
   wetLevel = 0.55
   fbLevel = 0.5
   echoActive = false
+  filterVal = 0
 
   constructor(private ctx: AudioContext) {
     this.input = ctx.createGain()
@@ -61,102 +70,182 @@ export class FXUnit {
     this.hp.type = 'highpass'
     this.hp.frequency.value = 10
     this.hp.Q.value = 0.9
-    this.delay = ctx.createDelay(MAX_DELAY)
-    this.delay.delayTime.value = 0.35
+
     this.fb = ctx.createGain()
     this.fb.gain.value = 0
     this.delayWet = ctx.createGain()
     this.delayWet.gain.value = 0
-    this.reverb = ctx.createConvolver()
-    this.reverb.buffer = makeIR(ctx, 2.8, 2.6)
+    this.ir = makeIR(ctx, 2.8, 2.6)
     this.reverbWet = ctx.createGain()
     this.reverbWet.gain.value = 0
 
     this.input.connect(this.lp)
     this.lp.connect(this.hp)
     this.hp.connect(this.output)
-
-    // delay loop: hp → delay → fb → delay, tapped by delayWet
-    this.hp.connect(this.delay)
-    this.delay.connect(this.fb)
-    this.fb.connect(this.delay)
-    this.delay.connect(this.delayWet)
     this.delayWet.connect(this.output)
-
-    // reverb
-    this.hp.connect(this.reverb)
-    this.reverb.connect(this.reverbWet)
     this.reverbWet.connect(this.output)
+
+    this.mountDelayNode()
+    this.mountReverbNode()
+  }
+
+  private mountDelayNode(): void {
+    const d = this.ctx.createDelay(MAX_DELAY)
+    d.delayTime.value = this.lastDelaySec
+    this.hp.connect(d)
+    d.connect(this.fb)
+    this.fb.connect(d)
+    d.connect(this.delayWet)
+    this.delay = d
+  }
+
+  private mountReverbNode(): void {
+    const rev = this.ctx.createConvolver()
+    rev.buffer = this.ir
+    this.hp.connect(rev)
+    rev.connect(this.reverbWet)
+    this.reverb = rev
+  }
+
+  private ramp(param: AudioParam, value: number, tc: number): void {
+    const t = this.ctx.currentTime
+    param.cancelScheduledValues(t)
+    param.setTargetAtTime(value, t, tc)
   }
 
   /** -1..1: negative sweeps lowpass, positive sweeps highpass, 0 = bypass */
   setFilter(v: number): void {
     const x = Math.min(1, Math.max(-1, v))
-    const t = this.ctx.currentTime
+    this.filterVal = x
     if (x < 0) {
       const f = 22050 * Math.pow(150 / 22050, -x)
-      this.lp.frequency.setTargetAtTime(f, t, 0.02)
-      this.hp.frequency.setTargetAtTime(10, t, 0.02)
+      this.ramp(this.lp.frequency, f, 0.02)
+      this.ramp(this.hp.frequency, 10, 0.02)
     } else {
       const f = 10 * Math.pow(8000 / 10, x)
-      this.hp.frequency.setTargetAtTime(f, t, 0.02)
-      this.lp.frequency.setTargetAtTime(22050, t, 0.02)
+      this.ramp(this.hp.frequency, f, 0.02)
+      this.ramp(this.lp.frequency, 22050, 0.02)
     }
   }
 
   setDelay(on: boolean): void {
     this.delayOn = on
-    const t = this.ctx.currentTime
-    this.delayWet.gain.setTargetAtTime(on ? this.wetLevel : 0, t, 0.08)
-    this.fb.gain.setTargetAtTime(on ? this.fbLevel : 0, t, 0.08)
+    if (this.flushed) return
+    if (on) this.applyDelayTime(false)
+    if (!this.echoActive) {
+      this.ramp(this.delayWet.gain, on ? this.wetLevel : 0, 0.05)
+      this.ramp(this.fb.gain, on ? this.fbLevel : 0, 0.05)
+    }
   }
 
   cycleDelayFrac(): number {
     const i = DELAY_FRACS.indexOf(this.delayFrac)
     this.delayFrac = DELAY_FRACS[(i + 1) % DELAY_FRACS.length]
+    this.applyDelayTime(true)
     return this.delayFrac
   }
 
   setWet(v: number): void {
     this.wetLevel = Math.min(1, Math.max(0, v))
-    if (this.delayOn && !this.echoActive) {
-      this.delayWet.gain.setTargetAtTime(this.wetLevel, this.ctx.currentTime, 0.05)
+    if (this.delayOn && !this.echoActive && !this.flushed) {
+      this.ramp(this.delayWet.gain, this.wetLevel, 0.04)
     }
   }
 
   setFb(v: number): void {
     this.fbLevel = Math.min(0.9, Math.max(0, v))
-    if (this.delayOn && !this.echoActive) {
-      this.fb.gain.setTargetAtTime(this.fbLevel, this.ctx.currentTime, 0.05)
+    if (this.delayOn && !this.echoActive && !this.flushed) {
+      this.ramp(this.fb.gain, this.fbLevel, 0.04)
     }
   }
 
   setReverb(on: boolean): void {
     this.reverbOn = on
-    this.reverbWet.gain.setTargetAtTime(on ? 0.35 : 0, this.ctx.currentTime, 0.1)
+    if (this.flushed) return
+    this.ramp(this.reverbWet.gain, on ? 0.35 : 0, 0.08)
+  }
+
+  private applyDelayTime(smooth: boolean): void {
+    if (!this.lastBpm || this.lastBpm <= 0) return
+    const dt = Math.min(MAX_DELAY, Math.max(0.02, (60 / this.lastBpm) * this.delayFrac))
+    this.lastDelaySec = dt
+    const t = this.ctx.currentTime
+    this.delay.delayTime.cancelScheduledValues(t)
+    if (smooth) this.delay.delayTime.setTargetAtTime(dt, t, 0.04)
+    else this.delay.delayTime.setValueAtTime(dt, t)
   }
 
   /** keep delay locked to the deck's effective tempo */
   setBpm(bpm: number): void {
     if (!bpm || bpm <= 0) return
-    const dt = Math.min(MAX_DELAY, Math.max(0.02, (60 / bpm) * this.delayFrac))
-    this.delay.delayTime.setTargetAtTime(dt, this.ctx.currentTime, 0.05)
+    this.lastBpm = bpm
+    this.applyDelayTime(true)
   }
 
   /** momentary transition FX: big wet + hot feedback while held */
   echoOutEngage(): void {
     this.echoActive = true
-    const t = this.ctx.currentTime
-    this.delayWet.gain.setTargetAtTime(0.95, t, 0.02)
-    this.fb.gain.setTargetAtTime(0.85, t, 0.02)
+    this.flushed = false
+    this.applyDelayTime(false)
+    this.ramp(this.delayWet.gain, 0.95, 0.02)
+    this.ramp(this.fb.gain, 0.85, 0.02)
   }
 
   /** release: let the tail ring out, then restore previous delay state */
   echoOutRelease(): void {
+    if (!this.echoActive) return
+    this.echoActive = false
+    if (this.flushed) return
+    // slow ramps so repeats decay naturally instead of cutting off
+    this.ramp(this.fb.gain, this.delayOn ? this.fbLevel : 0, 0.55)
+    this.ramp(this.delayWet.gain, this.delayOn ? this.wetLevel : 0, 0.85)
+  }
+
+  /**
+   * Immediately silence and clear delay + reverb buffers (called on pause,
+   * cue-stop, or track load). Preserves toggle states (delayOn / reverbOn) so
+   * restore() cleanly re-arms them when playback resumes — with zero stale tail!
+   */
+  flush(): void {
+    this.flushed = true
     this.echoActive = false
     const t = this.ctx.currentTime
-    // slow ramps so repeats decay naturally instead of cutting off
-    this.fb.gain.setTargetAtTime(this.delayOn ? this.fbLevel : 0, t, 0.6)
-    this.delayWet.gain.setTargetAtTime(this.delayOn ? this.wetLevel : 0, t, 0.9)
+    this.fb.gain.cancelScheduledValues(t)
+    this.fb.gain.setValueAtTime(0, t)
+    this.delayWet.gain.cancelScheduledValues(t)
+    this.delayWet.gain.setValueAtTime(0, t)
+    this.reverbWet.gain.cancelScheduledValues(t)
+    this.reverbWet.gain.setValueAtTime(0, t)
+
+    // Detach old DelayNode & ConvolverNode and mount fresh silent buffers
+    try {
+      this.hp.disconnect(this.delay)
+      this.fb.disconnect(this.delay)
+      this.delay.disconnect()
+    } catch {
+      /* noop */
+    }
+    try {
+      this.hp.disconnect(this.reverb)
+      this.reverb.disconnect()
+    } catch {
+      /* noop */
+    }
+    this.mountDelayNode()
+    this.mountReverbNode()
+  }
+
+  /** Re-engage toggled FX cleanly when playback starts/resumes. */
+  restore(): void {
+    if (!this.flushed) return
+    this.flushed = false
+    this.applyDelayTime(false)
+    if (this.delayOn) {
+      this.ramp(this.delayWet.gain, this.wetLevel, 0.025)
+      this.ramp(this.fb.gain, this.fbLevel, 0.025)
+    }
+    if (this.reverbOn) {
+      this.ramp(this.reverbWet.gain, 0.35, 0.04)
+    }
   }
 }

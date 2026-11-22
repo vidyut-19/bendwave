@@ -54,6 +54,18 @@
   --fader-cap-b:  #0f0e12;
   --lip:          inset 0 -2px 0 rgba(15, 14, 18, 0.16);
   --lip-press:    inset 0 1px 0 rgba(15, 14, 18, 0.25);
+  /* Boeing 737 Cockpit Knob palette (Putty Day Mode) */
+  --knob-hi:      #f8f7f3;
+  --knob-mid:     #d9d8d1;
+  --knob-lo:      #9d9e98;
+  --knob-cap-hi:  #ffffff;
+  --knob-cap-lo:  #cdccc4;
+  --knob-well:    #b6b5ad;
+  --knob-stroke:  #34363d;
+  --knob-tick:    #3c3e46;
+  --knob-track:   rgba(15, 14, 18, 0.14);
+  --knob-slot:    #14151a;
+  --knob-ind-flat:#ffffff;
 }
 
 /* ---- Dark Booth Edition (Matte Carbon + Obsidian Glass) ---- */
@@ -83,6 +95,18 @@
   --fader-cap-b:  #000000;
   --lip:          inset 0 -2px 0 rgba(0, 0, 0, 0.5);
   --lip-press:    inset 0 1px 0 rgba(0, 0, 0, 0.65);
+  /* Boeing 737 Cockpit Knob palette (Night Booth Mode) */
+  --knob-hi:      #545968;
+  --knob-mid:     #323642;
+  --knob-lo:      #181a21;
+  --knob-cap-hi:  #5f6576;
+  --knob-cap-lo:  #252833;
+  --knob-well:    #090a0e;
+  --knob-stroke:  #090a0d;
+  --knob-tick:    #9ca3b5;
+  --knob-track:   rgba(255, 255, 255, 0.14);
+  --knob-slot:    #0b0c10;
+  --knob-ind-flat:#f4f4f0;
 }
 
 * { box-sizing: border-box; }
@@ -765,33 +789,97 @@ input[type='range']::-webkit-slider-thumb {
 .t-btn.jump, .t-btn.jump-size { padding: 4.5px 6px; font-size: 10px; background: var(--keycap); color: var(--keycap-fg); }
 .t-btn.jump-size { min-width: 24px; font-family: var(--font-mono); font-weight: 800; }
 
-/* ---- 7. Mixer / EQ / FX Strip (clean subtle grey tint, no hard divider) ---- */
+/* ---- 7. Boeing 737 Cockpit Rotary EQ / Filter / FX Strip ---- */
 
 .mix-section {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding: 6px 8px;
-  background: var(--surface-2);
+  padding: 5px 8px;
+  background: #d7d6cf;
 }
-.ctrl-lab {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--ink-2);
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 700;
-}
-.eq-row { gap: 6px; }
-.eq-row .ctrl-lab { flex: 1; min-width: 66px; }
-.eq-row input { flex: 1; min-width: 34px; width: 46px; }
-.flt-lab.lp { color: var(--te-blue); }
-.flt-lab.hp { color: var(--te-orange); }
+[data-theme='ko2-dark'] .mix-section { background: var(--surface-2); }
 
-.fx-row { gap: 4px; }
-.fx-row .ctrl-lab { flex: 1; min-width: 60px; }
-.fx-row input { flex: 1; min-width: 34px; width: 46px; }
+.eq-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  align-items: center;
+  justify-items: center;
+}
+
+/* Boeing 737 SVG Rotary Knob Component */
+.b737-knob-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  user-select: none;
+  min-width: 0;
+}
+.b737-knob-wrap.compact {
+  flex-direction: row;
+  gap: 5px;
+}
+.b737-knob-wrap.compact .b737-val { display: none; }
+.b737-label {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+  line-height: 1;
+}
+.b737-knob-wrap.flt-lab.lp .b737-label { color: var(--te-blue); }
+.b737-knob-wrap.flt-lab.hp .b737-label { color: var(--te-orange); }
+.b737-val {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--dim);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.b737-knob-wrap.dragging .b737-val,
+.b737-knob-wrap.engaged .b737-val { color: var(--ink); }
+
+.b737-dial {
+  cursor: ns-resize;
+  outline: none;
+  border-radius: 50%;
+  touch-action: none;
+  display: grid;
+  place-items: center;
+  transition: transform 60ms ease;
+}
+.b737-dial:focus-visible { outline: 1.5px solid var(--te-orange); outline-offset: 1px; }
+.b737-knob-wrap.dragging .b737-dial { transform: scale(1.04); }
+.b737-svg { width: 100%; height: 100%; display: block; overflow: visible; }
+
+.k-stop-hi { stop-color: var(--knob-hi); }
+.k-stop-mid { stop-color: var(--knob-mid); }
+.k-stop-lo { stop-color: var(--knob-lo); }
+.k-cap-hi { stop-color: var(--knob-cap-hi); }
+.k-cap-lo { stop-color: var(--knob-cap-lo); }
+.k-well { fill: var(--knob-well); stroke: var(--knob-stroke); stroke-width: 0.7; opacity: 0.9; }
+.k-skirt-stroke { stroke: var(--knob-stroke); stroke-width: 0.85; }
+.k-inner-ring { stroke: rgba(0, 0, 0, 0.22); stroke-width: 0.75; }
+.k-bar-stroke { stroke: var(--knob-stroke); stroke-width: 0.8; }
+.k-slot-bg { fill: var(--knob-slot); }
+.k-facet-l { fill: rgba(255, 255, 255, 0.28); }
+.k-facet-r { fill: rgba(0, 0, 0, 0.14); }
+[data-theme='ko2-dark'] .k-facet-l { fill: rgba(255, 255, 255, 0.12); }
+[data-theme='ko2-dark'] .k-facet-r { fill: rgba(0, 0, 0, 0.32); }
+.k-flute-shadow { fill: rgba(0, 0, 0, 0.16); }
+[data-theme='ko2-dark'] .k-flute-shadow { fill: rgba(0, 0, 0, 0.42); }
+.k-tick { stroke: var(--knob-tick); stroke-width: 1.1; stroke-linecap: square; opacity: 0.72; }
+.k-tick.major { stroke-width: 1.6; opacity: 1; }
+.k-track { stroke: var(--knob-track); stroke-width: 2.3; }
+.k-arc { stroke-width: 2.5; }
+
+.fx-row { gap: 5px; justify-content: space-between; }
+.fx-knobs { display: flex; align-items: center; gap: 14px; flex: 1; justify-content: center; }
 .t-btn.fx { padding: 4.5px 7px; font-size: 10px; flex: 0 0 auto; }
 .t-btn.fx.delay { background: #ede9fe; color: #4c1d95; }
 .t-btn.fx.delay.active { background: var(--te-violet); color: #fff; border-color: var(--te-black); }
@@ -825,14 +913,22 @@ input[type='range']::-webkit-slider-thumb {
 [data-theme='ko2-dark'] .t-btn.rec-btn { background: #331618; color: #fca5a5; }
 .t-btn.rec-btn.active { background: var(--te-red); color: #fff; border-color: var(--te-black); animation: pulse-bar 1.2s ease-in-out infinite; }
 .t-btn.rec-btn.active svg circle { fill: #fff; }
-.master-row { gap: 6px; }
+.mixer-knobs {
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  gap: 6px;
+  padding: 6px 2px;
+  margin-top: auto;
+  background: #d7d6cf;
+}
+[data-theme='ko2-dark'] .mixer-knobs { background: var(--surface-2); }
 
 .sampler-box {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  margin-top: auto;
-  padding-top: 6px;
+  padding-top: 2px;
 }
 .sampler-hint { color: var(--dim); font-size: 9px; font-weight: 400; }
 .sampler-pads { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }

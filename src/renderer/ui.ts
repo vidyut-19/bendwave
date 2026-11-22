@@ -1,3 +1,5 @@
+import { createBoeingKnob, type BoeingKnob } from './knob'
+
 export interface DeckRefs {
   root: HTMLElement
   name: HTMLElement
@@ -37,14 +39,14 @@ export interface DeckRefs {
   stemsBox: HTMLElement
   stemMuteBtns: HTMLButtonElement[]
   stemSliders: HTMLInputElement[]
-  eqLow: HTMLInputElement
-  eqMid: HTMLInputElement
-  eqHigh: HTMLInputElement
-  filter: HTMLInputElement
-  wet: HTMLInputElement
-  fb: HTMLInputElement
-  vol: HTMLInputElement
-  trim: HTMLInputElement
+  eqLow: BoeingKnob
+  eqMid: BoeingKnob
+  eqHigh: BoeingKnob
+  filter: BoeingKnob
+  wet: BoeingKnob
+  fb: BoeingKnob
+  vol: BoeingKnob
+  trim: BoeingKnob
   delayBtn: HTMLButtonElement
   fracBtn: HTMLButtonElement
   reverbBtn: HTMLButtonElement
@@ -60,13 +62,13 @@ export interface AppRefs {
   deckA: DeckRefs
   deckB: DeckRefs
   xfader: HTMLInputElement
-  master: HTMLInputElement
+  master: BoeingKnob
   masterVu: HTMLCanvasElement
   splitCueBtn: HTMLButtonElement
   autoGainBtn: HTMLButtonElement
   recBtn: HTMLButtonElement
   samplerPads: HTMLButtonElement[]
-  samplerVol: HTMLInputElement
+  samplerVol: BoeingKnob
   themeBtn: HTMLButtonElement
   importBar: HTMLElement
   importFill: HTMLElement
@@ -271,25 +273,36 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
   </div>
 
   <div class="mix-section">
-    <div class="row eq-row">
-      <label class="ctrl-lab">TRM <input class="trim" type="range" min="-12" max="12" step="0.5" value="0" title="Input trim (dB)" /></label>
-      <label class="ctrl-lab">LO <input class="eq eq-low" type="range" min="-26" max="6" step="0.5" value="0" /></label>
-      <label class="ctrl-lab">MID <input class="eq eq-mid" type="range" min="-26" max="6" step="0.5" value="0" /></label>
-      <label class="ctrl-lab">HI <input class="eq eq-high" type="range" min="-26" max="6" step="0.5" value="0" /></label>
-      <label class="ctrl-lab flt-lab">FLT <input class="filter" type="range" min="-1" max="1" step="0.01" value="0" title="Low-pass ← 0 → High-pass (double-click resets)" /></label>
-      <label class="ctrl-lab vol-lab">VOL <input class="vol" type="range" min="0" max="1" step="0.01" value="1" /></label>
-    </div>
+    <div class="row eq-row"></div>
     <div class="row fx-row">
       <span class="sec-lab">FX</span>
       <button class="t-btn fx delay" data-act="deck${id}.delay">${ICO_DLY} DLY</button>
-      <button class="t-btn fx frac" data-act="deck${id}.delayFrac">1/2</button>
-      <label class="ctrl-lab">WET <input class="wet" type="range" min="0" max="1" step="0.01" value="0.55" /></label>
-      <label class="ctrl-lab">FB <input class="fb" type="range" min="0" max="0.9" step="0.01" value="0.5" /></label>
+      <button class="t-btn fx frac" data-act="deck${id}.delayFrac">♪ 1/2</button>
+      <div class="fx-knobs"></div>
       <button class="t-btn fx reverb" data-act="deck${id}.reverb">${ICO_VRB} VRB</button>
       <button class="t-btn fx echo" data-act="deck${id}.echoOut">${ICO_ECHO} ECHO</button>
     </div>
   </div>
 `
+
+function fmtDb(v: number): string {
+  if (Math.abs(v) < 0.05) return '0.0'
+  return `${v > 0 ? '+' : ''}${v.toFixed(1)}`
+}
+
+function fmtEq(v: number): string {
+  if (v <= -25.5) return 'KILL'
+  return fmtDb(v)
+}
+
+function fmtFlt(v: number): string {
+  if (Math.abs(v) < 0.03) return 'FLAT'
+  return v < 0 ? `LP ${Math.round(-v * 100)}%` : `HP ${Math.round(v * 100)}%`
+}
+
+function fmtPct(v: number): string {
+  return `${Math.round(v * 100)}%`
+}
 
 function buildDeck(id: 'A' | 'B'): DeckRefs {
   const root = document.createElement('section')
@@ -297,6 +310,120 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
   root.dataset.deck = id
   root.innerHTML = DECK_TEMPLATE(id)
   const q = <T extends HTMLElement>(sel: string): T => root.querySelector(sel) as T
+
+  const deckAccent = id === 'A' ? 'var(--deck-a)' : 'var(--deck-b)'
+  const trim = createBoeingKnob({
+    label: 'TRM',
+    min: -12,
+    max: 12,
+    step: 0.5,
+    value: 0,
+    bipolar: true,
+    variant: 'pointer',
+    size: 42,
+    accent: deckAccent,
+    title: 'Input trim (-12..+12 dB)',
+    format: fmtDb
+  })
+  const eqLow = createBoeingKnob({
+    label: 'LO',
+    min: -26,
+    max: 6,
+    step: 0.5,
+    value: 0,
+    bipolar: true,
+    variant: 'pointer',
+    size: 42,
+    accent: deckAccent,
+    title: 'Low EQ (-26..+6 dB)',
+    format: fmtEq
+  })
+  const eqMid = createBoeingKnob({
+    label: 'MID',
+    min: -26,
+    max: 6,
+    step: 0.5,
+    value: 0,
+    bipolar: true,
+    variant: 'pointer',
+    size: 42,
+    accent: deckAccent,
+    title: 'Mid EQ (-26..+6 dB)',
+    format: fmtEq
+  })
+  const eqHigh = createBoeingKnob({
+    label: 'HI',
+    min: -26,
+    max: 6,
+    step: 0.5,
+    value: 0,
+    bipolar: true,
+    variant: 'pointer',
+    size: 42,
+    accent: deckAccent,
+    title: 'High EQ (-26..+6 dB)',
+    format: fmtEq
+  })
+  const filter = createBoeingKnob({
+    label: 'FLT',
+    min: -1,
+    max: 1,
+    step: 0.01,
+    value: 0,
+    bipolar: true,
+    variant: 'wedge',
+    size: 44,
+    lowAccent: 'var(--te-blue)',
+    highAccent: 'var(--te-orange)',
+    title: 'DJ Filter (LP ← 0 → HP)',
+    format: fmtFlt,
+    className: 'flt-lab'
+  })
+  const vol = createBoeingKnob({
+    label: 'VOL',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: 1,
+    defaultValue: 1,
+    variant: 'scalloped',
+    size: 42,
+    accent: deckAccent,
+    title: 'Channel Volume',
+    format: fmtPct
+  })
+  q('.eq-row').append(trim.root, eqLow.root, eqMid.root, eqHigh.root, filter.root, vol.root)
+
+  const wet = createBoeingKnob({
+    label: 'WET',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: 0.55,
+    defaultValue: 0.55,
+    variant: 'scalloped',
+    size: 34,
+    accent: 'var(--te-violet)',
+    title: 'Delay Wet Level',
+    format: fmtPct,
+    className: 'compact'
+  })
+  const fb = createBoeingKnob({
+    label: 'FB',
+    min: 0,
+    max: 0.9,
+    step: 0.01,
+    value: 0.5,
+    defaultValue: 0.5,
+    variant: 'scalloped',
+    size: 34,
+    accent: 'var(--te-rose)',
+    title: 'Delay Feedback',
+    format: (v) => `${Math.round((v / 0.9) * 100)}%`,
+    className: 'compact'
+  })
+  q('.fx-knobs').append(wet.root, fb.root)
+
   return {
     root,
     name: q('.track-name'),
@@ -336,14 +463,14 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
     stemsBox: q('.stems-row'),
     stemMuteBtns: Array.from(root.querySelectorAll<HTMLButtonElement>('.stem-pill')),
     stemSliders: Array.from(root.querySelectorAll<HTMLInputElement>('.stem input')),
-    eqLow: q('.eq-low'),
-    eqMid: q('.eq-mid'),
-    eqHigh: q('.eq-high'),
-    filter: q('.filter'),
-    wet: q('.wet'),
-    fb: q('.fb'),
-    vol: q('.vol'),
-    trim: q('.trim'),
+    eqLow,
+    eqMid,
+    eqHigh,
+    filter,
+    wet,
+    fb,
+    vol,
+    trim,
     delayBtn: q('.delay'),
     fracBtn: q('.frac'),
     reverbBtn: q('.reverb'),
@@ -407,14 +534,41 @@ export function buildApp(root: HTMLElement): AppRefs {
       <button class="t-btn auto-gain" data-act="mix.autoGain" title="normalize tracks to ${-14} LUFS via trim on load">${ICO_GAIN} AUTO GAIN</button>
       <button class="t-btn rec-btn" data-act="mix.record" title="record master bus to ~/Music/vibedeck/">${ICO_REC} REC</button>
     </div>
-    <div class="row master-row"><span class="sec-lab">MST</span><input class="master" type="range" min="0" max="1" step="0.01" value="0.85" style="flex:1" /></div>
+    <div class="mixer-knobs"></div>
     <div class="sampler-box">
       <div class="panel-title">((SAMPLER)) <span class="sampler-hint">drop · ⌥clr</span></div>
       <div class="sampler-pads">
         ${[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `<button class="smp" data-act="sampler.pad${n}">${n}</button>`).join('\n        ')}
       </div>
-      <div class="row"><span class="sec-lab">SMP</span><input class="sampler-vol" type="range" min="0" max="1" step="0.01" value="0.9" style="flex:1" /></div>
     </div>`
+
+  const masterKnob = createBoeingKnob({
+    label: 'MASTER',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: 0.85,
+    defaultValue: 0.85,
+    variant: 'wedge',
+    size: 52,
+    accent: 'var(--te-orange)',
+    title: 'Master Output Gain',
+    format: fmtPct
+  })
+  const samplerKnob = createBoeingKnob({
+    label: 'SAMPLER',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: 0.9,
+    defaultValue: 0.9,
+    variant: 'scalloped',
+    size: 46,
+    accent: 'var(--te-yellow)',
+    title: 'Sampler Bus Level',
+    format: fmtPct
+  })
+  ;(mixer.querySelector('.mixer-knobs') as HTMLElement).append(masterKnob.root, samplerKnob.root)
 
   main.append(deckA.root, mixer, deckB.root)
 
@@ -486,13 +640,13 @@ export function buildApp(root: HTMLElement): AppRefs {
     deckA,
     deckB,
     xfader: mixer.querySelector('.xfader') as HTMLInputElement,
-    master: mixer.querySelector('.master') as HTMLInputElement,
+    master: masterKnob,
     masterVu: mixer.querySelector('.master-vu') as HTMLCanvasElement,
     splitCueBtn: mixer.querySelector('.split-cue') as HTMLButtonElement,
     autoGainBtn: mixer.querySelector('.auto-gain') as HTMLButtonElement,
     recBtn: mixer.querySelector('.rec-btn') as HTMLButtonElement,
     samplerPads: Array.from(mixer.querySelectorAll<HTMLButtonElement>('.smp')),
-    samplerVol: mixer.querySelector('.sampler-vol') as HTMLInputElement,
+    samplerVol: samplerKnob,
     themeBtn: header.querySelector('.theme-btn') as HTMLButtonElement,
     importBar,
     importFill: importBar.querySelector('.import-fill') as HTMLElement,

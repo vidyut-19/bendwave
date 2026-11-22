@@ -42,16 +42,19 @@ export class SyncController {
       return
     }
 
-    // 1. tempo lock follows the master's effective BPM (incl. its pitch fader)
+    // 1. tempo lock follows the master's effective BPM (half/double-time aware)
     const masterEff = mg.bpm * master.effRate
-    slave.setTempoRate(masterEff / sg.bpm)
+    let ratio = masterEff / sg.bpm
+    while (ratio > 1.414) ratio /= 2
+    while (ratio < 0.707) ratio *= 2
+    slave.setTempoRate(ratio)
 
     // 2. phase lock: small proportional correction toward the master's phase
     // Both position and offset live in track time, so beat duration is 60/bpm.
     const sBeat = 60 / sg.bpm
     const mBeat = 60 / mg.bpm
-    const sPhase = ((((slave.position - sg.offset) / sBeat) % 1) + 1) % 1
-    const mPhase = ((((master.position - mg.offset) / mBeat) % 1) + 1) % 1
+    const sPhase = ((((slave.audiblePosition - sg.offset) / sBeat) % 1) + 1) % 1
+    const mPhase = ((((master.audiblePosition - mg.offset) / mBeat) % 1) + 1) % 1
     let err = sPhase - mPhase
     if (err > 0.5) err -= 1
     if (err < -0.5) err += 1

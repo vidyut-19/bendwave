@@ -142,10 +142,6 @@ export class Deck {
 
   /** Live post-FX/post-VOL level + 16-band spectrum for the Winamp/LCD visualizer. */
   sampleMeter(bars16: Float32Array): { rms: number; peak: number; clip: boolean } {
-    if (!this.playing) {
-      bars16.fill(0)
-      return { rms: 0, peak: 0, clip: false }
-    }
     this.analyser.getFloatTimeDomainData(this.timeBuf)
     this.analyser.getByteFrequencyData(this.freqBuf)
     let sum = 0
@@ -156,6 +152,10 @@ export class Deck {
       sum += v * v
     }
     const rms = Math.sqrt(sum / this.timeBuf.length)
+    if (peak < 1e-4 && !this.playing) {
+      bars16.fill(0)
+      return { rms: 0, peak: 0, clip: false }
+    }
     // Map 128 FFT bins logarithmically onto 16 musical bands (sub → air)
     const edges = [1, 2, 3, 4, 6, 8, 11, 15, 20, 27, 36, 48, 63, 82, 104, 127]
     let prev = 0
@@ -274,6 +274,20 @@ export class Deck {
   }
 
   private eqState = { low: 0, mid: 0, high: 0 }
+  private trimState = 0
+  private volState = 1
+
+  get trimDb(): number {
+    return this.trimState
+  }
+
+  get volume(): number {
+    return this.volState
+  }
+
+  get filterVal(): number {
+    return this.fx.filterVal
+  }
 
   /** DJ filter: -1 = full lowpass, +1 = full highpass */
   setFilter(v: number): void {
@@ -282,16 +296,22 @@ export class Deck {
 
   /** channel volume fader (post-FX, pre-crossfader) */
   setVolume(v: number): void {
-    this.output.gain.value = Math.min(1.2, Math.max(0, v))
+    const c = Math.min(1.2, Math.max(0, v))
+    this.volState = c
+    this.output.gain.value = c
   }
 
   /** input trim, -12..+12 dB (pre-EQ) */
   setTrim(db: number): void {
-    this.preGain.gain.value = Math.pow(10, Math.min(12, Math.max(-12, db)) / 20)
+    const c = Math.min(12, Math.max(-12, db))
+    this.trimState = c
+    this.preGain.gain.value = Math.pow(10, c / 20)
   }
 
   async load(track: Track, buffer: AudioBuffer, stemBuffers: AudioBuffer[] = []): Promise<void> {
+    this.cancelLoopScheduling()
     this.stopSources()
+    this.fx.flush()
     if (this.kl) {
       this.kl.dispose()
       this.kl = null
@@ -312,6 +332,7 @@ export class Deck {
     this.bendDelta = 0
     this.activeLoop = null
     this.loopNext = null
+    if (track.grid?.bpm && track.grid.bpm > 0) this.fx.setBpm(track.grid.bpm)
   }
 
   /** Swaps stem layers; when non-empty, stems replace the full mix on playback. */
@@ -322,10 +343,16 @@ export class Deck {
       g.connect(this.preGain)
       return { buffer: b, gain: g }
     })
+    if (this.stemLayers.length > 0 && this.keylock) {
+      // Stems replace full mix where keylock is unsupported — clear stale active state
+      this.keylock = false
+    }
     if (this.playing) {
-      const p = this.position
+      const p = this.audiblePosition
       this.stopSources()
       if (this.kl) this.kl.stop()
+      this.startPos = p
+      this.startedAt = this.ctx.currentTime
       this.startSources(p)
     }
   }
@@ -349,6 +376,8 @@ export class Deck {
     if (this.startPos >= this.duration - 0.05) this.startPos = 0
     this.playing = true
     this.startedAt = this.ctx.currentTime
+    this.fx.setBpm(this.effectiveBpm ?? this.track?.grid?.bpm ?? 0)
+    this.fx.restore()
     const from = this.activeLoop ? this.audiblePosition : this.startPos
     if (this.useKeylock()) {
       void this.startKeylock(from)
@@ -359,10 +388,12 @@ export class Deck {
 
   pause(): void {
     if (!this.playing) return
-    const p = this.position
+    const p = Math.min(this.duration, Math.max(0, this.activeLoop ? this.audiblePosition : this.position))
     this.cancelLoopScheduling()
     this.stopSources()
     if (this.kl) this.kl.stop()
+    // Stop delay/echo & reverb tails on normal pause (preserve only while holding momentary ECHO)
+    if (!this.fx.echoActive) this.fx.flush()
     this.playing = false
     this.startPos = p
   }
@@ -412,7 +443,8 @@ export class Deck {
     }
     for (const s of this.sources) s.playbackRate.value = this.effRate
     if (this.loopNext) {
-      for (const s of this.loopNext.sources) s.playbackRate.value = this.effRate
+      // Rate changed after a loop wrap was already scheduled — restart cleanly at audiblePos
+      this.restartAt(this.audiblePosition)
     }
   }
 
@@ -439,7 +471,7 @@ export class Deck {
   }
 
   setCueHere(): void {
-    this.cuePoint = Math.min(Math.max(this.position, 0), this.duration)
+    this.cuePoint = Math.min(Math.max(this.audiblePosition, 0), this.duration)
     if (this.track) this.track.cue = this.cuePoint
   }
 
@@ -454,7 +486,7 @@ export class Deck {
     const beat = 60 / bpm
     const len = beats * beat
     const grid = this.track?.grid
-    let start = this.position
+    let start = this.audiblePosition
     if (grid && grid.bpm > 0) {
       const k = Math.round((start - grid.offset) / beat)
       start = Math.max(0, Math.min(Math.max(0, this.duration - len), grid.offset + k * beat))
@@ -499,7 +531,7 @@ export class Deck {
     const grid = this.track?.grid
     if (!grid || grid.bpm <= 0 || !this.hasAudio) return
     const beat = 60 / grid.bpm
-    const k = Math.round((this.position - grid.offset) / beat)
+    const k = Math.round((this.audiblePosition - grid.offset) / beat)
     const target = Math.max(0, grid.offset + (k + dir * this.jumpBeats) * beat)
     this.seek(target)
   }
@@ -613,7 +645,10 @@ export class Deck {
     const k = Math.max(0, Math.ceil((this.position - start) / len - 1e-6))
     const iterEndPos = start + k * len
     const tEnd = this.startedAt + (iterEndPos - this.startPos) / rate
-    if (tEnd < this.ctx.currentTime + 0.004) {
+    const remaining = tEnd - this.ctx.currentTime
+    // Wait until within 220ms lookahead before locking stop(tEnd) so pitch changes stay glitch-free
+    if (remaining > 0.22) return
+    if (remaining < 0.004) {
       // boundary is now — jump straight back to the loop start
       this.stopSources()
       this.startSources(this.audiblePosition)
@@ -660,8 +695,8 @@ export class Deck {
   }
 
   /**
-   * Sync to another deck: match effective BPM, then phase-align the nearest
-   * beat of this deck's grid to the master's current beat phase.
+   * Sync to another deck: match effective BPM (half/double-time aware), then
+   * phase-align the nearest beat of this deck's grid to the master's current beat phase.
    */
   syncTo(master: Deck): boolean {
     const mg = master.track?.grid
@@ -669,13 +704,16 @@ export class Deck {
     if (!mg || !sg || mg.bpm <= 0 || sg.bpm <= 0 || !this.hasAudio || !master.hasAudio) return false
 
     const masterEffBpm = mg.bpm * master.effRate
-    this.setTempoRate(masterEffBpm / sg.bpm)
+    let ratio = masterEffBpm / sg.bpm
+    while (ratio > 1.414) ratio /= 2
+    while (ratio < 0.707) ratio *= 2
+    this.setTempoRate(ratio)
 
     // Both position and offset are in track time; track-time beat length is 60/bpm.
     const mBeat = 60 / mg.bpm
     const sBeat = 60 / sg.bpm
-    const mPhase = ((((master.position - mg.offset) / mBeat) % 1) + 1) % 1
-    const k = Math.round((this.position - sg.offset) / sBeat - mPhase)
+    const mPhase = ((((master.audiblePosition - mg.offset) / mBeat) % 1) + 1) % 1
+    const k = Math.round((this.audiblePosition - sg.offset) / sBeat - mPhase)
     let pos = sg.offset + (k + mPhase) * sBeat
     while (pos < 0) pos += sBeat
     this.seek(pos)
@@ -751,6 +789,19 @@ export class Deck {
       for (const l of this.stemLayers) list.push(mk(l.buffer, l.gain))
     } else if (this.buffer) {
       list.push(mk(this.buffer, this.preGain))
+    }
+    // Natural end-of-track detection for AudioBufferSourceNode playback
+    const lead = list[0]
+    if (lead) {
+      lead.onended = () => {
+        if (!this.playing || this.activeLoop || !this.sources.includes(lead)) return
+        if (this.position >= this.duration - 0.15) {
+          this.stopSources()
+          this.playing = false
+          this.startPos = this.duration
+          this.onEnded?.()
+        }
+      }
     }
     return list
   }

@@ -526,14 +526,17 @@ async function loadTrackIntoDeck(
     }
     crate.upsert(track)
     renderCrate()
+    const r = deckRefs(deck)
     if (autoGain && track.gainDb != null) {
       deck.setTrim(track.gainDb)
-      const r = deckRefs(deck)
-      if (document.activeElement !== r.trim) r.trim.value = String(track.gainDb.toFixed(1))
+      if (!r.trim.dragging) r.trim.setValue(track.gainDb)
       log(
         `deck ${deck.id} auto-gain ${track.gainDb >= 0 ? '+' : ''}${track.gainDb.toFixed(1)} dB` +
           (isFinite(track.lufs ?? NaN) ? ` (track ${(track.lufs as number).toFixed(1)} LUFS → ${TARGET_LUFS})` : '')
       )
+    } else if (!autoGain) {
+      deck.setTrim(0)
+      if (!r.trim.dragging) r.trim.setValue(0)
     }
     if (opts.cueAtSec != null && opts.cueAtSec >= 0) {
       deck.seek(opts.cueAtSec)
@@ -735,9 +738,11 @@ function actionPress(action: string): void {
         break
       }
       case 'delay':
+        deck.fx.setBpm(deck.effectiveBpm ?? deck.track?.grid?.bpm ?? 0)
         deck.fx.setDelay(!deck.fx.delayOn)
         break
       case 'delayFrac': {
+        deck.fx.setBpm(deck.effectiveBpm ?? deck.track?.grid?.bpm ?? 0)
         const f = deck.fx.cycleDelayFrac()
         log(`deck ${deck.id} delay = ${delayFracLabel(f)} beat`)
         break
@@ -830,7 +835,7 @@ function actionPress(action: string): void {
           if (d.track?.gainDb != null) {
             d.setTrim(d.track.gainDb)
             const r = deckRefs(d)
-            if (document.activeElement !== r.trim) r.trim.value = String(d.track.gainDb.toFixed(1))
+            if (!r.trim.dragging) r.trim.setValue(d.track.gainDb)
           }
         }
       }
@@ -923,6 +928,7 @@ document.addEventListener('keydown', (e) => {
       const s = deck.cycleJumpSize()
       log(`deck ${deck.id} jump size = ${s} beat${s > 1 ? 's' : ''}`)
     } else {
+      releaseSyncIfSlave(deck)
       deck.beatJump(e.code === 'BracketLeft' ? -1 : 1)
       wfFor(deck).markDirty()
     }
@@ -1011,7 +1017,16 @@ document.addEventListener('dragleave', () => {
   dragDepth = Math.max(0, dragDepth - 1)
   if (dragDepth === 0) refs.dropOverlay.hidden = true
 })
-window.addEventListener('blur', hideDropOverlay)
+window.addEventListener('blur', () => {
+  hideDropOverlay()
+  // Release any momentary keyboard/pointer holds if the window loses focus mid-press
+  for (const d of [engine.deckA, engine.deckB]) {
+    d.cueRelease()
+    d.bend(0)
+    d.releaseLoop()
+    if (!txRunner.isRunning && d.fx.echoActive) d.fx.echoOutRelease()
+  }
+})
 document.addEventListener('dragover', (e) => e.preventDefault())
 document.addEventListener('drop', (e) => {
   e.preventDefault()
@@ -1211,10 +1226,8 @@ function applyStemGainUI(deck: Deck, i: number, v: number): void {
 }
 
 function updateFilterLabel(r: DeckRefs, v: number): void {
-  const lab = r.filter.closest('.flt-lab')
-  if (!lab) return
-  lab.classList.toggle('lp', v < -0.04)
-  lab.classList.toggle('hp', v > 0.04)
+  r.filter.root.classList.toggle('lp', v < -0.04)
+  r.filter.root.classList.toggle('hp', v > 0.04)
 }
 
 function updateStemsButtons(): void {
@@ -1333,14 +1346,10 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   const eqs = [r.eqLow, r.eqMid, r.eqHigh]
   const applyEq = () => {
     if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outEq' : 'inEq')
-    deck.setEQ(eqs[0].valueAsNumber, eqs[1].valueAsNumber, eqs[2].valueAsNumber)
+    deck.setEQ(eqs[0].value, eqs[1].value, eqs[2].value)
   }
-  eqs.forEach((e) => {
-    e.oninput = applyEq
-    e.ondblclick = () => {
-      e.value = '0'
-      applyEq()
-    }
+  eqs.forEach((k) => {
+    k.oninput = applyEq
   })
 
   r.stemSliders.forEach((s, i) => {
@@ -1379,20 +1388,15 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
     })
   })
 
-  r.filter.oninput = () => {
+  r.filter.oninput = (v) => {
     if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outFilter' : 'inFilter')
-    deck.setFilter(r.filter.valueAsNumber)
-    updateFilterLabel(r, r.filter.valueAsNumber)
+    deck.setFilter(v)
+    updateFilterLabel(r, v)
   }
-  r.filter.ondblclick = () => {
-    r.filter.value = '0'
-    deck.setFilter(0)
-    updateFilterLabel(r, 0)
-  }
-  r.wet.oninput = () => deck.fx.setWet(r.wet.valueAsNumber)
-  r.fb.oninput = () => deck.fx.setFb(r.fb.valueAsNumber)
-  r.vol.oninput = () => deck.setVolume(r.vol.valueAsNumber)
-  r.trim.oninput = () => deck.setTrim(r.trim.valueAsNumber)
+  r.wet.oninput = (v) => deck.fx.setWet(v)
+  r.fb.oninput = (v) => deck.fx.setFb(v)
+  r.vol.oninput = (v) => deck.setVolume(v)
+  r.trim.oninput = (v) => deck.setTrim(v)
 
   r.hotcueBtns.forEach((btn, i) => {
     btn.addEventListener('pointerdown', (e) => {
@@ -1409,9 +1413,19 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   for (const btn of r.root.querySelectorAll<HTMLButtonElement>('button[data-act]')) {
     if (btn.classList.contains('hc')) continue // handled with shift/alt modifiers above
     const act = btn.dataset.act!
-    btn.addEventListener('pointerdown', () => actionPress(act))
-    btn.addEventListener('pointerup', () => actionRelease(act))
-    btn.addEventListener('pointerleave', () => actionRelease(act))
+    let held = false
+    const release = () => {
+      if (!held) return
+      held = false
+      actionRelease(act)
+    }
+    btn.addEventListener('pointerdown', () => {
+      held = true
+      actionPress(act)
+    })
+    btn.addEventListener('pointerup', release)
+    btn.addEventListener('pointerleave', release)
+    btn.addEventListener('pointercancel', release)
   }
 }
 
@@ -1495,9 +1509,9 @@ refs.xfader.addEventListener('input', () => {
   txRunner.override('xfade')
   engine.mixer.setCrossfade(refs.xfader.valueAsNumber)
 })
-refs.master.addEventListener('input', () => {
-  engine.master.gain.value = refs.master.valueAsNumber
-})
+refs.master.oninput = (v) => {
+  engine.master.gain.value = v
+}
 
 // ---------------------------------------------------------------------------
 // sampler: pads, drag & drop, persistence
@@ -1541,7 +1555,7 @@ async function restoreSampler(): Promise<void> {
   updateSamplerUI()
 }
 
-refs.samplerVol.addEventListener('input', () => sampler.setMaster(refs.samplerVol.valueAsNumber))
+refs.samplerVol.oninput = (v) => sampler.setMaster(v)
 
 refs.samplerPads.forEach((pad, i) => {
   pad.addEventListener('pointerdown', (e) => {
@@ -1700,16 +1714,14 @@ function tick(): void {
       btn.title = hc != null ? `Hot Cue ${i + 1} @ ${fmtTime(hc)} (${barLabelAt(deck, hc)}) · ⇧set · ⌥clear` : `Hot Cue ${i + 1} empty · ⇧click to set`
     }
     const eq = deck.eqDb
-    const eqSliders: [HTMLInputElement, number][] = [
-      [r.eqLow, eq.low],
-      [r.eqMid, eq.mid],
-      [r.eqHigh, eq.high]
-    ]
-    for (const [slider, db] of eqSliders) {
-      if (document.activeElement !== slider && Math.abs(slider.valueAsNumber - db) > 0.1) {
-        slider.value = String(db.toFixed(1))
-      }
-    }
+    if (!r.eqLow.dragging) r.eqLow.setValue(eq.low)
+    if (!r.eqMid.dragging) r.eqMid.setValue(eq.mid)
+    if (!r.eqHigh.dragging) r.eqHigh.setValue(eq.high)
+    if (!r.filter.dragging) r.filter.setValue(deck.filterVal)
+    if (!r.vol.dragging) r.vol.setValue(deck.volume)
+    if (!r.trim.dragging) r.trim.setValue(deck.trimDb)
+    if (!r.wet.dragging) r.wet.setValue(deck.fx.wetLevel)
+    if (!r.fb.dragging) r.fb.setValue(deck.fx.fbLevel)
     if (deck.playing || wf.dirty) wf.draw(deck)
   }
   if (document.activeElement !== refs.xfader) {
@@ -1831,37 +1843,50 @@ midi.onAction = (actionId, msg) => {
   // continuous (CC value) actions
   if (msg.type === 'cc') {
     if (actionId === 'mix.crossfade') {
+      txRunner.override('xfade')
       engine.mixer.setCrossfade(msg.value / 127)
       return
     }
     if (actionId === 'sampler.volume') {
-      sampler.setMaster(msg.value / 127)
+      const v = msg.value / 127
+      sampler.setMaster(v)
+      if (!refs.samplerVol.dragging) refs.samplerVol.setValue(v)
       return
     }
     const deck = deckOf(actionId)
     if (deck) {
+      const r = deckRefs(deck)
+      const ccEqDb = (cc: number) => (cc <= 64 ? -26 + (cc / 64) * 26 : ((cc - 64) / 63) * 6)
       if (actionId.endsWith('.filter')) {
+        if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outFilter' : 'inFilter')
         const v = (msg.value - 64) / 63
         deck.setFilter(v)
-        const r = deckRefs(deck)
-        if (document.activeElement !== r.filter) r.filter.value = String(v.toFixed(2))
+        if (!r.filter.dragging) r.filter.setValue(v)
         updateFilterLabel(r, v)
         return
       }
       if (actionId.endsWith('.volume')) {
-        deck.setVolume(msg.value / 127)
+        const v = msg.value / 127
+        deck.setVolume(v)
+        if (!r.vol.dragging) r.vol.setValue(v)
         return
       }
       if (actionId.endsWith('.delayWet')) {
-        deck.fx.setWet(msg.value / 127)
+        const v = msg.value / 127
+        deck.fx.setWet(v)
+        if (!r.wet.dragging) r.wet.setValue(v)
         return
       }
       if (actionId.endsWith('.delayFb')) {
-        deck.fx.setFb((msg.value / 127) * 0.9)
+        const v = (msg.value / 127) * 0.9
+        deck.fx.setFb(v)
+        if (!r.fb.dragging) r.fb.setValue(v)
         return
       }
       if (actionId.endsWith('.trim')) {
-        deck.setTrim((msg.value / 127) * 24 - 12)
+        const v = (msg.value / 127) * 24 - 12
+        deck.setTrim(v)
+        if (!r.trim.dragging) r.trim.setValue(v)
         return
       }
       if (actionId.endsWith('.tempo')) {
@@ -1870,15 +1895,18 @@ midi.onAction = (actionId, msg) => {
         return
       }
       if (actionId.endsWith('.eqLow')) {
-        deck.setEqBand('low', (msg.value / 127) * 32 - 26)
+        if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outEq' : 'inEq')
+        deck.setEqBand('low', ccEqDb(msg.value))
         return
       }
       if (actionId.endsWith('.eqMid')) {
-        deck.setEqBand('mid', (msg.value / 127) * 32 - 26)
+        if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outEq' : 'inEq')
+        deck.setEqBand('mid', ccEqDb(msg.value))
         return
       }
       if (actionId.endsWith('.eqHigh')) {
-        deck.setEqBand('high', (msg.value / 127) * 32 - 26)
+        if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outEq' : 'inEq')
+        deck.setEqBand('high', ccEqDb(msg.value))
         return
       }
     }
@@ -1986,7 +2014,7 @@ txRunner.onFinish = (msg) => {
 txRunner.onStemGain = (deck, i, v) => applyStemGainUI(deck, i, v)
 txRunner.onFilterChanged = (deck, v) => {
   const r = deckRefs(deck)
-  if (document.activeElement !== r.filter) r.filter.value = String(v.toFixed(2))
+  if (!r.filter.dragging) r.filter.setValue(v)
   updateFilterLabel(r, v)
 }
 
