@@ -434,7 +434,7 @@ export class WaveformView {
 
     if (!this.freq || this.duration <= 0) {
       g.fillStyle = light ? '#8c8d94' : '#3a424d'
-      g.font = `${10 * dpr}px ui-monospace, monospace`
+      g.font = `${10 * dpr}px "Geist Mono", "GeistMono Nerd Font Mono", "GeistMono Nerd Font", ui-monospace, monospace`
       g.textAlign = 'center'
       g.fillText('full-track overview & arrangement ribbon — drop audio to analyze', w / 2, bodyY + bodyH / 2 + 3 * dpr)
       return
@@ -448,7 +448,7 @@ export class WaveformView {
 
     // Arrangement Ribbon along top edge
     if (sections.length > 0) {
-      g.font = `700 ${8.5 * dpr}px ui-monospace, monospace`
+      g.font = `700 ${8.5 * dpr}px "Geist Mono", "GeistMono Nerd Font Mono", "GeistMono Nerd Font", ui-monospace, monospace`
       g.textAlign = 'left'
       g.textBaseline = 'middle'
       for (const s of sections) {
@@ -506,7 +506,7 @@ export class WaveformView {
       let stepPhrases = 1
       while ((phraseDur * stepPhrases) / secPerPx < minLabelPx) stepPhrases *= 2
 
-      g.font = `600 ${8 * dpr}px ui-monospace, monospace`
+      g.font = `600 ${8 * dpr}px "Geist Mono", "GeistMono Nerd Font Mono", "GeistMono Nerd Font", ui-monospace, monospace`
       g.textAlign = 'left'
       for (let p = firstPhrase; p <= lastPhrase; p++) {
         const ts = grid.offset + p * phraseDur
@@ -598,7 +598,7 @@ export class WaveformView {
       const sec = sectionAt(sections, ht)
       const secPrefix = sec ? `${sec.label} · ` : ''
       const label = bb ? `${secPrefix}BAR ${bb.bar}.${bb.beat} · ${fmtShortTime(ht)}` : fmtShortTime(ht)
-      g.font = `700 ${9 * dpr}px ui-monospace, monospace`
+      g.font = `700 ${9 * dpr}px "Geist Mono", "GeistMono Nerd Font Mono", "GeistMono Nerd Font", ui-monospace, monospace`
       const tw = g.measureText(label).width + 10 * dpr
       const bx = Math.min(w - tw - 2 * dpr, Math.max(2 * dpr, hx - tw / 2))
       g.fillStyle = light ? '#ffffff' : 'rgba(9,11,15,0.95)'
@@ -639,7 +639,7 @@ export class WaveformView {
     g.fillStyle = color
     g.fillRect(x - pw / 2, bodyY, pw, ph)
     g.fillStyle = '#ffffff'
-    g.font = `700 ${8.5 * dpr}px ui-monospace, monospace`
+    g.font = `700 ${8.5 * dpr}px "Geist Mono", "GeistMono Nerd Font Mono", "GeistMono Nerd Font", ui-monospace, monospace`
     g.textAlign = 'center'
     g.textBaseline = 'middle'
     g.fillText(label, x, bodyY + ph / 2 + 0.5 * dpr)
@@ -673,7 +673,7 @@ export class WaveformView {
 
     if (!this.freq) {
       g.fillStyle = light ? '#8c8d94' : '#3a424d'
-      g.font = `${12 * dpr}px ui-monospace, monospace`
+      g.font = `${12 * dpr}px "Geist Mono", "GeistMono Nerd Font Mono", "GeistMono Nerd Font", ui-monospace, monospace`
       g.textAlign = 'center'
       g.fillText('drop a track', w / 2, bodyY + bodyH / 2 + 4 * dpr)
       return
@@ -717,7 +717,7 @@ export class WaveformView {
       const bpb = grid.beatsPerBar ?? 4
       const phraseBars = grid.phraseBars ?? 8
       let k = Math.floor((t0 - grid.offset) / beat) - 1
-      g.font = `600 ${9 * dpr}px ui-monospace, monospace`
+      g.font = `600 ${9 * dpr}px "Geist Mono", "GeistMono Nerd Font Mono", "GeistMono Nerd Font", ui-monospace, monospace`
       g.textAlign = 'left'
       g.textBaseline = 'middle'
       for (;;) {
@@ -779,7 +779,7 @@ export class WaveformView {
       g.lineWidth = 1
 
       const label = s.hasVocals ? `${s.label} ♪` : s.label
-      g.font = `700 ${8.5 * dpr}px ui-monospace, monospace`
+      g.font = `700 ${8.5 * dpr}px "Geist Mono", "GeistMono Nerd Font Mono", "GeistMono Nerd Font", ui-monospace, monospace`
       const tw = g.measureText(label).width + 8 * dpr
       g.fillStyle = light ? '#ffffff' : '#090b0f'
       g.fillRect(x, 2 * dpr, tw, rulerH - 3 * dpr)
@@ -860,7 +860,7 @@ export class WaveformView {
     g.stroke()
     g.lineWidth = 1
 
-    g.font = `700 ${9 * dpr}px ui-monospace, monospace`
+    g.font = `700 ${9 * dpr}px "Geist Mono", "GeistMono Nerd Font Mono", "GeistMono Nerd Font", ui-monospace, monospace`
     const pad = 4 * dpr
     const tw = Math.max(13 * dpr, g.measureText(label).width + pad * 2)
     const fh = rulerH - 2 * dpr
@@ -1052,7 +1052,7 @@ export class WaveformView {
     g.fillStyle = muted ? '#9ca3af' : color
     g.fillRect(x0 + 3 * dpr, ty, 3 * dpr, tagH)
     g.fillStyle = muted ? '#9ca3af' : light ? '#0f0e12' : color
-    g.font = `700 ${8.5 * dpr}px ui-monospace, monospace`
+    g.font = `700 ${8.5 * dpr}px "Geist Mono", "GeistMono Nerd Font Mono", "GeistMono Nerd Font", ui-monospace, monospace`
     g.textAlign = 'left'
     g.textBaseline = 'middle'
     g.fillText(text, x0 + 8 * dpr, ty + tagH / 2 + 0.5 * dpr)

@@ -23,7 +23,7 @@
 
   --font-sans: "Helvetica Neue", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-silk: "DIN Alternate", "Helvetica Neue", sans-serif;
-  --font-mono: "JetBrainsMono Nerd Font Mono", "SF Mono", Menlo, monospace;
+  --font-mono: "Geist Mono", "GeistMono Nerd Font Mono", "GeistMono Nerd Font", "SF Mono", Menlo, monospace;
 }
 
 /* ---- Putty Day Mode (Default): EP-133 Putty Chassis + Tinted Greys + Crisp White Waveforms & Keycaps ---- */

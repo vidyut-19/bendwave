@@ -37,7 +37,7 @@ legal equivalents that nail the exact optical geometry:
    - **Best open-source match**: **`Barlow` / `Barlow Condensed` (600 / 700)** — engineered directly from DIN 1451 highway/industrial typography (dead ringer for `TechnoType` & EP–133 legends).
    - **macOS native**: `"DIN Alternate"` (already installed on macOS!).
 3. **Hybrid LCD Digits, BPM, Bars, MIDI & Timestamps (`--font-mono`)**:
-   - **Best open-source match**: **`JetBrains Mono`** (weights `400 / 700`, `font-variant-numeric: tabular-nums`) or **`IBM Plex Mono`** — razor-sharp zero/one legibility, rock-solid tabular alignment so `127.0 BPM` and `BAR 17.1` never jitter while playing!
+   - **Best open-source match**: **`Geist Mono`** (`GeistMono Nerd Font Mono`, weights `400 / 700`, `font-variant-numeric: tabular-nums`) — ultra-crisp Swiss neo-grotesque monospace with razor-sharp zero/one legibility and rock-solid tabular alignment so `127.0 BPM` and `BAR 17.1` never jitter while playing!
    - *(Optional Winamp/LCD flourish)*: **`DSEG7` / `Share Tech Mono` / `Silkscreen`** strictly for the large BPM / BAR segment digits inside the obsidian LCD window!
 
 ---
