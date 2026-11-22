@@ -1,0 +1,865 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>vibedeck — field essay &amp; architecture notes</title>
+<style>
+  :root {
+    --paper: #faf9f5;        /* e-reader friendly warm bright stock (renders crisp white on e-ink) */
+    --tint: #efeee8;         /* subtle putty callout tint */
+    --surface: #ffffff;
+    --ink: #0f0e12;          /* deep carbon ink */
+    --ink-2: #24252a;
+    --grey-700: #464850;
+    --grey-500: #6b6e78;
+    --grey-300: #b8b9b4;
+    --grey-200: #d6d5ce;
+    --orange: #f05a24;       /* TE K.O. II signature */
+    --blue: #0071bb;
+    --green: #006837;
+    --violet: #6d28d9;
+
+    --serif: "Charter", "Iowan Old Style", Georgia, serif;
+    --sans: "Helvetica Neue", -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: "Geist Mono", "GeistMono Nerd Font Mono", "GeistMono Nerd Font", "SF Mono", Menlo, monospace;
+  }
+
+  @page {
+    size: letter portrait;
+    margin: 0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #d8d7d2;
+    color: var(--ink);
+    font-family: var(--serif);
+    -webkit-font-smoothing: antialiased;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .sheet {
+    width: 8.5in;
+    height: 11in;
+    background: var(--paper);
+    margin: 0 auto;
+    padding: 0.48in 0.64in 0.44in;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+    break-after: page;
+  }
+  .sheet:last-child { page-break-after: auto; break-after: auto; }
+
+  /* TE Corner Registration Marks */
+  .reg { position: absolute; width: 11px; height: 11px; pointer-events: none; }
+  .reg.tl { top: 16px; left: 16px; border-top: 1px solid var(--ink); border-left: 1px solid var(--ink); }
+  .reg.tr { top: 16px; right: 16px; border-top: 1px solid var(--ink); border-right: 1px solid var(--ink); }
+  .reg.bl { bottom: 16px; left: 16px; border-bottom: 1px solid var(--ink); border-left: 1px solid var(--ink); }
+  .reg.br { bottom: 16px; right: 16px; border-bottom: 1px solid var(--ink); border-right: 1px solid var(--ink); }
+
+  /* Masthead (Page 1) */
+  .masthead {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    border-bottom: 1.5px solid var(--ink);
+    padding-bottom: 11px;
+    gap: 14px;
+  }
+  .brand-kicker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 7.4pt;
+    letter-spacing: 0.08em;
+    color: var(--grey-700);
+    margin-bottom: 5px;
+    white-space: nowrap;
+  }
+  .pill-orange, .pill-black {
+    padding: 1.5px 6px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    font-size: 7pt;
+    white-space: nowrap;
+  }
+  .pill-orange { background: var(--orange); color: #fff; }
+  .pill-black  { background: var(--ink); color: #fff; }
+
+  h1 {
+    font-family: var(--sans);
+    font-weight: 200;
+    font-size: 23pt;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    text-transform: lowercase;
+    color: var(--ink);
+  }
+  h1 strong { font-weight: 500; }
+  .subtitle {
+    margin-top: 5px;
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 10.5pt;
+    color: var(--grey-700);
+    line-height: 1.35;
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    border: 1px solid var(--ink);
+    background: var(--surface);
+    font-family: var(--mono);
+    font-size: 7pt;
+  }
+  .meta-cell {
+    padding: 4px 9px;
+    border-right: 1px solid var(--grey-200);
+    border-bottom: 1px solid var(--grey-200);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .meta-cell:nth-child(2n) { border-right: none; }
+  .meta-cell:nth-last-child(-n+2) { border-bottom: none; }
+  .meta-cell .k { color: var(--grey-500); font-size: 5.8pt; letter-spacing: 0.08em; }
+  .meta-cell .v { color: var(--ink); font-weight: 700; }
+
+  /* Running Header (Pages 2–4) */
+  .run-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 6px;
+    font-family: var(--mono);
+    font-size: 7.4pt;
+    letter-spacing: 0.07em;
+    color: var(--grey-700);
+  }
+  .run-head strong { color: var(--ink); font-weight: 700; }
+
+  /* TE Section Headings: ((1)) lowercase title */
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 4px;
+    margin-bottom: 9px;
+  }
+  .sec-num {
+    font-family: var(--mono);
+    font-size: 9pt;
+    font-weight: 700;
+    color: var(--orange);
+    letter-spacing: -0.02em;
+  }
+  .sec-title {
+    font-family: var(--sans);
+    font-size: 13pt;
+    font-weight: 300;
+    letter-spacing: -0.005em;
+    text-transform: lowercase;
+    color: var(--ink);
+  }
+  .sec-sub {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 7pt;
+    letter-spacing: 0.07em;
+    color: var(--grey-500);
+    text-transform: uppercase;
+  }
+
+  /* E-Reader Body Copy (Charter — generous size & leading) */
+  p {
+    font-family: var(--serif);
+    font-size: 10.3pt;
+    line-height: 1.52;
+    color: var(--ink-2);
+    margin-bottom: 7.5px;
+  }
+  p:last-child { margin-bottom: 0; }
+  p strong { color: var(--ink); font-weight: 700; }
+  p em { font-style: italic; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 8.4pt;
+    background: var(--tint);
+    border: 1px solid var(--grey-200);
+    padding: 0.5px 4px;
+    color: var(--ink);
+  }
+
+  /* Clean Editorial Lists */
+  ul.prose-list {
+    margin: 2px 0 4px 0;
+    padding-left: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  ul.prose-list li {
+    position: relative;
+    padding-left: 15px;
+    font-family: var(--serif);
+    font-size: 10.1pt;
+    line-height: 1.48;
+    color: var(--ink-2);
+  }
+  ul.prose-list li::before {
+    content: "▸";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--orange);
+    font-family: var(--mono);
+    font-size: 9pt;
+  }
+  ul.prose-list li strong { color: var(--ink); }
+
+  /* Pull-Quote / Philosophical Callout */
+  .callout {
+    background: var(--tint);
+    border-left: 3px solid var(--orange);
+    border-top: 1px solid var(--grey-200);
+    border-right: 1px solid var(--grey-200);
+    border-bottom: 1px solid var(--grey-200);
+    padding: 11px 14px;
+  }
+  .callout.dark-rule { border-left-color: var(--ink); }
+  .callout-kicker {
+    font-family: var(--mono);
+    font-size: 7.2pt;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--orange);
+    margin-bottom: 4px;
+  }
+  .callout.dark-rule .callout-kicker { color: var(--ink); }
+  .callout p {
+    font-size: 10.2pt;
+    line-height: 1.52;
+    margin-bottom: 0;
+  }
+
+  /* Diagram Card */
+  .diagram-card {
+    background: var(--surface);
+    border: 1px solid var(--ink);
+    padding: 9px 12px 8px;
+    flex-shrink: 0;
+  }
+  .diagram-cap {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 6.8pt;
+    letter-spacing: 0.06em;
+    color: var(--grey-500);
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--grey-200);
+    padding-bottom: 4px;
+    margin-bottom: 7px;
+    white-space: nowrap;
+  }
+  .diagram-cap strong { color: var(--ink); }
+
+  /* Technical Spec Tables (readable 9.5pt Charter + Geist Mono tags) */
+  table.spec {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    border: 1px solid var(--ink);
+    font-size: 9.2pt;
+    line-height: 1.4;
+  }
+  table.spec th {
+    background: var(--ink);
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 7pt;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    text-align: left;
+    padding: 5px 8px;
+  }
+  table.spec td {
+    padding: 5.5px 8px;
+    border-bottom: 1px solid var(--grey-200);
+    vertical-align: top;
+    color: var(--ink-2);
+  }
+  table.spec tr:last-child td { border-bottom: none; }
+  table.spec td.col-key {
+    font-family: var(--mono);
+    font-size: 8.2pt;
+    font-weight: 700;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  table.spec td.col-tag {
+    font-family: var(--mono);
+    font-size: 7.6pt;
+    color: var(--grey-700);
+    white-space: nowrap;
+  }
+
+  /* Two-Column Cards (used sparingly for balanced side-by-side comparison) */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--ink);
+    padding: 11px 13px;
+  }
+  .card-head {
+    font-family: var(--mono);
+    font-size: 7.8pt;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ink);
+    border-bottom: 1px solid var(--grey-200);
+    padding-bottom: 4px;
+    margin-bottom: 7px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .card-head span { color: var(--orange); }
+  .card p { font-size: 9.8pt; line-height: 1.5; }
+
+  /* Numbered Practice Steps */
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .step {
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    gap: 9px;
+    align-items: start;
+    background: var(--surface);
+    border: 1px solid var(--grey-200);
+    border-left: 2.5px solid var(--ink);
+    padding: 7px 11px;
+  }
+  .step-n {
+    font-family: var(--mono);
+    font-size: 10pt;
+    font-weight: 700;
+    color: var(--orange);
+    line-height: 1.25;
+  }
+  .step-body h3 {
+    font-family: var(--sans);
+    font-size: 9.8pt;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--ink);
+    margin-bottom: 2px;
+  }
+  .step-body p { font-size: 9.5pt; line-height: 1.45; margin: 0; }
+
+  /* Footer */
+  .foot {
+    margin-top: auto;
+    padding-top: 7px;
+    border-top: 1px solid var(--grey-300);
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 7pt;
+    letter-spacing: 0.06em;
+    color: var(--grey-500);
+  }
+  .foot strong { color: var(--ink); }
+</style>
+</head>
+<body>
+
+<!-- ====================================================================== -->
+<!-- PAGE 1: MASTHEAD + WHAT WE BUILT TODAY                                 -->
+<!-- ====================================================================== -->
+<article class="sheet">
+  <div class="reg tl"></div><div class="reg tr"></div><div class="reg bl"></div><div class="reg br"></div>
+
+  <header class="masthead">
+    <div>
+      <div class="brand-kicker">
+        <span class="pill-orange">EP–133 × B737</span>
+        <span class="pill-black">FIELD ESSAY</span>
+        <span>E-READER EDITION</span>
+      </div>
+      <h1><strong>vibedeck</strong> — session notes &amp; philosophy</h1>
+      <div class="subtitle">From cockpit hardware &amp; deterministic audio engines to live stem-harvested sampling and the curator's craft.</div>
+    </div>
+    <div class="meta-grid">
+      <div class="meta-cell"><span class="k">BUILD</span><span class="v">v1.4.2</span></div>
+      <div class="meta-cell"><span class="k">DATE</span><span class="v">21 NOV 2026</span></div>
+      <div class="meta-cell"><span class="k">BODY TYPE</span><span class="v">CHARTER 10.3pt</span></div>
+      <div class="meta-cell"><span class="k">MONO TYPE</span><span class="v">GEIST MONO</span></div>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">((1))</span>
+      <span class="sec-title">what shipped today</span>
+      <span class="sec-sub">v1.4 → v1.4.2 · verified on darty shortlist (25 tracks)</span>
+    </div>
+    <p>
+      Today's session moved <strong>vibedeck</strong> from a capable two-deck player into a cohesive, opinionated physical instrument — one that looks like a collaboration between Stockholm industrial designers and a Boeing 737 flight deck, while running a deterministic DSP intelligence engine underneath with zero cloud latency.
+    </p>
+    <ul class="prose-list">
+      <li><strong>Putty Chassis &amp; Color-Blocked Keycaps:</strong> Replaced thin accent stripes with Braun / Dieter Rams 70–20–10 molded keycaps — quiet stone-putty utility surfaces, charcoal K.O. II loop and sampler pads, solid TE Orange (Deck A) and TE Blue (Deck B) play keys, Ochre cue anchors, Geist Mono readouts, and musical notation (<code>♩</code>, <code>𝄞</code>, <code>𝄆 𝄇</code>, <code>♪</code>).</li>
+      <li><strong>Recursive Folder Import &amp; Honest Loading States:</strong> Dragging an entire folder straight from Finder now recursively scans audio files, streams an animated progress bar across the top rail, and shows live pulsing badges on decks, crate rows, stems, and SoundCloud searches.</li>
+      <li><strong>The Connected Intelligence Engine (Pillars 1–4):</strong> Pure TypeScript DSP computes a 60 ms acoustic fingerprint per track (13-dim MFCC timbre, peak sub frequency, 16-step groove, swing, energy-gated <code>∅</code> drum intros/outros), feeds a 6 ms no-repeat Beam-Search + 2-opt <em>Set Path Planner</em> (<code>ARC</code>, <code>CLIMB</code>, <code>2-PEAK</code>), and drives 6 live <em>Automated Transition Curves</em> with instant touch-to-override.</li>
+      <li><strong>Ten Middle-Range Audio Bugs Squashed:</strong> Fixed the funny delay-on-pause bug by flushing and rebuilding clean silent <code>DelayNode</code> and <code>ConvolverNode</code> buffers on pause and track load (re-arming cleanly on play), plus fixed non-keylock track-end detection, loop <code>audiblePosition</code> drift, half/double-time <code>SYNC</code> folding (73 BPM → 132 BPM), and MIDI CC auto-transition override.</li>
+    </ul>
+  </section>
+
+  <!-- Vector Schematic: The 3 Boeing 737 Rotary Knob Archetypes -->
+  <section class="diagram-card">
+    <div class="diagram-cap">
+      <strong>fig 1.1 — boeing 737 rotary knob grammar</strong>
+      <span>drag ↕ · shift 4× fine · dbl-click reset</span>
+    </div>
+    <svg viewBox="0 0 680 128" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bgBody" x1="18%" y1="10%" x2="84%" y2="90%">
+          <stop offset="0%" stop-color="#f8f7f3"/>
+          <stop offset="55%" stop-color="#d7d6cf"/>
+          <stop offset="100%" stop-color="#9e9f99"/>
+        </linearGradient>
+        <linearGradient id="bgCap" x1="20%" y1="12%" x2="82%" y2="88%">
+          <stop offset="0%" stop-color="#ffffff"/>
+          <stop offset="100%" stop-color="#cecdc6"/>
+        </linearGradient>
+        <filter id="ksh" x="-20%" y="-20%" width="150%" height="150%">
+          <feDropShadow dx="1.5" dy="2.2" stdDeviation="1.6" flood-color="#000" flood-opacity="0.32"/>
+        </filter>
+      </defs>
+
+      <!-- Card 1: EFIS 4-Lobe Pointer -->
+      <rect x="2" y="2" width="214" height="122" fill="#f3f2ec" stroke="#d6d5ce" stroke-width="1"/>
+      <g transform="translate(18, 22)">
+        <circle cx="38" cy="38" r="27" fill="none" stroke="#b8b9b4" stroke-width="1.5" stroke-dasharray="2 5.4"/>
+        <circle cx="38" cy="38" r="22" fill="#bdbcb4" stroke="#34363d" stroke-width="0.8"/>
+        <g filter="url(#ksh)">
+          <path d="M 38 17 C 44 17 47 21 51 25 C 55 29 59 32 59 38 C 59 44 55 47 51 51 C 47 55 44 59 38 59 C 32 59 29 55 25 51 C 21 47 17 44 17 38 C 17 32 21 29 25 25 C 29 21 32 17 38 17 Z" fill="url(#bgBody)" stroke="#24252a" stroke-width="0.9"/>
+          <circle cx="38" cy="38" r="14.5" fill="url(#bgCap)" stroke="#8e908b" stroke-width="0.7"/>
+          <rect x="33.5" y="18" width="9" height="39" rx="2" fill="url(#bgCap)" stroke="#24252a" stroke-width="0.9"/>
+          <rect x="35.8" y="19.2" width="4.4" height="20" rx="0.6" fill="#14151a"/>
+          <rect x="37" y="20.2" width="2" height="18" rx="0.4" fill="#f05a24"/>
+        </g>
+      </g>
+      <text x="100" y="33" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="8.2" font-weight="700" fill="#0f0e12">EFIS 4-LOBE BAR</text>
+      <text x="100" y="47" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.2" fill="#f05a24" font-weight="700">TRM · LO · MID · HI</text>
+      <text x="100" y="64" font-family="Charter, Georgia, serif" font-size="8.6" fill="#464850">B737 HSI / RANGE grip.</text>
+      <text x="100" y="77" font-family="Charter, Georgia, serif" font-size="8.6" fill="#464850">Piece-wise bipolar scale</text>
+      <text x="100" y="90" font-family="Charter, Georgia, serif" font-size="8.6" fill="#464850">locks 0.0 dB dead-center</text>
+      <text x="100" y="103" font-family="Charter, Georgia, serif" font-size="8.6" fill="#464850">at 12 o'clock detent.</text>
+
+      <!-- Card 2: Overhead Faceted Wedge -->
+      <rect x="233" y="2" width="214" height="122" fill="#f3f2ec" stroke="#d6d5ce" stroke-width="1"/>
+      <g transform="translate(249, 22)">
+        <circle cx="38" cy="38" r="27" fill="none" stroke="#b8b9b4" stroke-width="1.5" stroke-dasharray="2 5.4"/>
+        <path d="M 38 14 A 24 24 0 0 1 61 32" fill="none" stroke="#f05a24" stroke-width="2.5"/>
+        <circle cx="38" cy="38" r="22" fill="#bdbcb4" stroke="#34363d" stroke-width="0.8"/>
+        <g filter="url(#ksh)" transform="rotate(28 38 38)">
+          <circle cx="38" cy="38" r="20.5" fill="url(#bgBody)" stroke="#24252a" stroke-width="0.9"/>
+          <path d="M 38 17 L 45.5 27 L 45.5 51 Q 38 55 30.5 51 L 30.5 27 Z" fill="url(#bgCap)" stroke="#24252a" stroke-width="0.9"/>
+          <path d="M 38 17.5 L 31 27 L 31 50.5 L 38 53.5 Z" fill="rgba(255,255,255,0.32)"/>
+          <path d="M 38 17.5 L 45 27 L 45 50.5 L 38 53.5 Z" fill="rgba(0,0,0,0.14)"/>
+          <rect x="35.8" y="18.2" width="4.4" height="21" rx="0.6" fill="#14151a"/>
+          <rect x="37" y="19.2" width="2" height="19" rx="0.4" fill="#f05a24"/>
+        </g>
+      </g>
+      <text x="331" y="33" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="8.2" font-weight="700" fill="#0f0e12">OVERHEAD WEDGE</text>
+      <text x="331" y="47" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.2" fill="#0071bb" font-weight="700">FLT · MASTER</text>
+      <text x="331" y="64" font-family="Charter, Georgia, serif" font-size="8.6" fill="#464850">B737 APU / AC selector.</text>
+      <text x="331" y="77" font-family="Charter, Georgia, serif" font-size="8.6" fill="#464850">Hero beveled teardrop.</text>
+      <text x="331" y="90" font-family="Charter, Georgia, serif" font-size="8.6" fill="#464850">Filter shifts LP Blue left</text>
+      <text x="331" y="103" font-family="Charter, Georgia, serif" font-size="8.6" fill="#464850">and HP Orange right.</text>
+
+      <!-- Card 3: EFIS 8-Scallop BRT -->
+      <rect x="464" y="2" width="214" height="122" fill="#f3f2ec" stroke="#d6d5ce" stroke-width="1"/>
+      <g transform="translate(480, 22)">
+        <circle cx="38" cy="38" r="27" fill="none" stroke="#b8b9b4" stroke-width="1.5" stroke-dasharray="2 5.4"/>
+        <path d="M 21 55 A 24 24 0 1 1 59 48" fill="none" stroke="#6d28d9" stroke-width="2.5"/>
+        <circle cx="38" cy="38" r="22" fill="#bdbcb4" stroke="#34363d" stroke-width="0.8"/>
+        <g filter="url(#ksh)" transform="rotate(72 38 38)">
+          <circle cx="38" cy="38" r="19.5" fill="url(#bgBody)" stroke="#24252a" stroke-width="0.9"/>
+          <circle cx="38" cy="19.5" r="2.6" fill="rgba(0,0,0,0.2)"/>
+          <circle cx="51" cy="25" r="2.6" fill="rgba(0,0,0,0.2)"/>
+          <circle cx="56.5" cy="38" r="2.6" fill="rgba(0,0,0,0.2)"/>
+          <circle cx="51" cy="51" r="2.6" fill="rgba(0,0,0,0.2)"/>
+          <circle cx="38" cy="56.5" r="2.6" fill="rgba(0,0,0,0.2)"/>
+          <circle cx="25" cy="51" r="2.6" fill="rgba(0,0,0,0.2)"/>
+          <circle cx="19.5" cy="38" r="2.6" fill="rgba(0,0,0,0.2)"/>
+          <circle cx="25" cy="25" r="2.6" fill="rgba(0,0,0,0.2)"/>
+          <circle cx="38" cy="38" r="13.2" fill="url(#bgCap)" stroke="#24252a" stroke-width="0.85"/>
+          <rect x="36" y="25.2" width="4" height="9" rx="0.6" fill="#14151a"/>
+          <rect x="37" y="26" width="2" height="7.4" rx="0.4" fill="#6d28d9"/>
+        </g>
+      </g>
+      <text x="562" y="33" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="8.2" font-weight="700" fill="#0f0e12">EFIS 8-SCALLOP</text>
+      <text x="562" y="47" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.2" fill="#6d28d9" font-weight="700">VOL · WET · FB · SMP</text>
+      <text x="562" y="64" font-family="Charter, Georgia, serif" font-size="8.6" fill="#464850">B737 BRT fluted dimmer.</text>
+      <text x="562" y="77" font-family="Charter, Georgia, serif" font-size="8.6" fill="#464850">Continuous 0 → 100% level</text>
+      <text x="562" y="90" font-family="Charter, Georgia, serif" font-size="8.6" fill="#464850">controls with swept arc</text>
+      <text x="562" y="103" font-family="Charter, Georgia, serif" font-size="8.6" fill="#464850">and live MIDI rotation.</text>
+    </svg>
+  </section>
+
+  <div class="callout dark-rule">
+    <div class="callout-kicker">why the delay-on-pause bug mattered</div>
+    <p>
+      In Web Audio, stopping an <code>AudioBufferSourceNode</code> stops new input, but leaves whatever audio is already orbiting inside a <code>DelayNode → feedback → DelayNode</code> ring buffer. Flushing and remounting fresh silent nodes on pause eliminates ghost echoes — and stops Track 1's reverb or delay tail from popping back out the instant you press Play on Track 2.
+    </p>
+  </div>
+
+  <footer class="foot">
+    <span><strong>VIBEDECK</strong> · EP–133 K.O. II × B737 FIELD ESSAY</span>
+    <span>PAGE <strong>01</strong> / 04</span>
+  </footer>
+</article>
+
+<!-- ====================================================================== -->
+<!-- PAGE 2: THE HARVESTED DNA SAMPLER (PILLAR 6)                           -->
+<!-- ====================================================================== -->
+<article class="sheet" style="gap: 8.5px;">
+  <div class="reg tl"></div><div class="reg tr"></div><div class="reg bl"></div><div class="reg br"></div>
+
+  <div class="run-head">
+    <span><strong>VIBEDECK</strong> — FIELD ESSAY &amp; ARCHITECTURE NOTES</span>
+    <span>PILLAR 6 · LIVE SET MEMORY</span>
+  </div>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">((2))</span>
+      <span class="sec-title">the "harvested dna" sampler</span>
+      <span class="sec-sub">callbacks · live motifs · fred again.. playbook</span>
+    </div>
+    <p>
+      Most DJ samplers are treated as an afterthought — a static folder of generic risers, claps, and airhorns that have nothing to do with the records you are actually playing. The idea you floated at the end of today's session flips that completely on its head: <strong>a living sampler populated directly from the tracks in your set.</strong>
+    </p>
+    <p>
+      Imagine you are three songs deep. Track 2 has an impossibly wet, punchy kick you want to keep in your back pocket. Track 4 has a textured 808 with a particular saturation you love. Track 6 drops a one-bar UKG bass wobble that makes the room lift off. Track 9 has a half-bar vocal phrase that catches your ear. Instead of letting those tiny moments vanish once the fader crosses, you <em>harvest</em> them onto your 8 center pads and carry them with you for the next twenty minutes.
+    </p>
+    <p>
+      In live electronic music — think Fred again.., Four Tet, Overmono, or Floating Points — bringing back a vocal chop or bass wobble from fifteen minutes earlier over a completely different record is called a <strong>callback</strong>. It transforms a sequence of separate tracks into a single coherent story with recurring characters. Almost no DJ software is built to let a selector do this casually on the fly.
+    </p>
+  </section>
+
+  <!-- Vector Schematic: Stem-to-Pad Harvester Pipeline -->
+  <section class="diagram-card">
+    <div class="diagram-cap">
+      <strong>fig 2.1 — pillar 6: stem-to-pad harvester flow</strong>
+      <span>~85% of dsp plumbing already in vibedeck v1.4</span>
+    </div>
+    <svg viewBox="0 0 680 108" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg">
+      <!-- Box 1 -->
+      <rect x="4" y="4" width="136" height="82" fill="#faf9f5" stroke="#0f0e12" stroke-width="1.2"/>
+      <rect x="4" y="4" width="136" height="17" fill="#0f0e12"/>
+      <text x="12" y="15.5" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.4" font-weight="700" fill="#ffffff">1 · ISOLATED STEMS</text>
+      <text x="12" y="34" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.4" fill="#d97706" font-weight="700">■ DRM</text>
+      <text x="48" y="34" font-family="Charter, Georgia, serif" font-size="8.2" fill="#24252a">wet kicks, hats</text>
+      <text x="12" y="48" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.4" fill="#e11d48" font-weight="700">■ BAS</text>
+      <text x="48" y="48" font-family="Charter, Georgia, serif" font-size="8.2" fill="#24252a">808s, UKG wobble</text>
+      <text x="12" y="62" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.4" fill="#0284c7" font-weight="700">■ OTH</text>
+      <text x="48" y="62" font-family="Charter, Georgia, serif" font-size="8.2" fill="#24252a">chord stabs, synths</text>
+      <text x="12" y="76" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.4" fill="#7c3aed" font-weight="700">■ VOX</text>
+      <text x="48" y="76" font-family="Charter, Georgia, serif" font-size="8.2" fill="#24252a">phrases, chops</text>
+
+      <!-- Arrow 1->2 -->
+      <line x1="140" y1="45" x2="162" y2="45" stroke="#0f0e12" stroke-width="1.4"/>
+      <polygon points="162,41 170,45 162,49" fill="#0f0e12"/>
+
+      <!-- Box 2 -->
+      <rect x="172" y="4" width="144" height="82" fill="#faf9f5" stroke="#0f0e12" stroke-width="1.2"/>
+      <rect x="172" y="4" width="144" height="17" fill="#f05a24"/>
+      <text x="180" y="15.5" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.4" font-weight="700" fill="#ffffff">2 · ONE-GESTURE SLICE</text>
+      <text x="180" y="36" font-family="Charter, Georgia, serif" font-size="8.5" fill="#24252a">Click a beat or drag</text>
+      <text x="180" y="49" font-family="Charter, Georgia, serif" font-size="8.5" fill="#24252a">1–2 bars on a stem lane.</text>
+      <text x="180" y="65" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7" fill="#464850">TAGGED AUTOMATICALLY:</text>
+      <text x="180" y="77" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.4" font-weight="700" fill="#0f0e12">♩ 132.0 BPM · 𝄞 5A</text>
+
+      <!-- Arrow 2->3 -->
+      <line x1="316" y1="45" x2="338" y2="45" stroke="#0f0e12" stroke-width="1.4"/>
+      <polygon points="338,41 346,45 338,49" fill="#0f0e12"/>
+
+      <!-- Box 3 -->
+      <rect x="348" y="4" width="154" height="82" fill="#faf9f5" stroke="#0f0e12" stroke-width="1.2"/>
+      <rect x="348" y="4" width="154" height="17" fill="#0071bb"/>
+      <text x="356" y="15.5" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.4" font-weight="700" fill="#ffffff">3 · LIVE WARP + KEY LOCK</text>
+      <text x="356" y="35" font-family="Charter, Georgia, serif" font-size="8.4" fill="#24252a"><tspan font-family="Geist Mono, monospace" font-size="7.6" font-weight="700">signalsmith-stretch</tspan></text>
+      <text x="356" y="48" font-family="Charter, Georgia, serif" font-size="8.4" fill="#24252a">matches live Master deck:</text>
+      <text x="356" y="63" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.2" fill="#006837" font-weight="700">• 132 → 126 BPM (warp)</text>
+      <text x="356" y="76" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.2" fill="#6d28d9" font-weight="700">• 5A → 8A (± semitones)</text>
+
+      <!-- Arrow 3->4 -->
+      <line x1="502" y1="45" x2="524" y2="45" stroke="#0f0e12" stroke-width="1.4"/>
+      <polygon points="524,41 532,45 524,49" fill="#0f0e12"/>
+
+      <!-- Box 4 -->
+      <rect x="534" y="4" width="142" height="82" fill="#25262b" stroke="#0f0e12" stroke-width="1.2"/>
+      <text x="544" y="19" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7.4" font-weight="700" fill="#f05a24">4 · EP–133 PADS 1–8</text>
+      <rect x="546" y="27" width="24" height="16" fill="#f05a24" rx="1"/>
+      <rect x="576" y="27" width="24" height="16" fill="#e11d48" rx="1"/>
+      <rect x="606" y="27" width="24" height="16" fill="#0284c7" rx="1"/>
+      <rect x="636" y="27" width="24" height="16" fill="#7c3aed" rx="1"/>
+      <rect x="546" y="49" width="24" height="16" fill="#3a3c46" rx="1"/>
+      <rect x="576" y="49" width="24" height="16" fill="#3a3c46" rx="1"/>
+      <rect x="606" y="49" width="24" height="16" fill="#3a3c46" rx="1"/>
+      <rect x="636" y="49" width="24" height="16" fill="#3a3c46" rx="1"/>
+      <text x="546" y="78" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="6.8" fill="#d8d6cf">ONE-SHOT / SYNC LOOP</text>
+
+      <!-- Bottom caption note -->
+      <text x="4" y="102" font-family="Geist Mono, GeistMono Nerd Font Mono, monospace" font-size="7" fill="#6b6e78">OPTIONAL: EXPORT ANY HARVESTED PAD AS CLEAN .WAV → DROP DIRECTLY ONTO PHYSICAL K.O. II FOR UNPLUGGED JAMS</text>
+    </svg>
+  </section>
+
+  <section>
+    <p>
+      The remarkable engineering twist is that <strong>nearly all the heavy DSP is already running in vibedeck today.</strong> Demucs already separates local tracks into sample-aligned <code>DRM / BAS / OTH / VOX</code> stems. Our beatgrid already knows every downbeat to the millisecond. And <code>signalsmith-stretch</code> — the MIT WASM time-stretcher we already bundled for key lock — supports <em>independent</em> playback rate and semitone pitch shift. That means a 1-bar bass wobble harvested at 132 BPM in <code>5A</code> can lock cleanly onto a 126 BPM track in <code>8A</code> twenty minutes later without clashing a single note.
+    </p>
+
+    <table class="spec" style="margin-top: 6px; font-size: 8.9pt; line-height: 1.35;">
+      <thead>
+        <tr>
+          <th>Harvest Type</th>
+          <th>Source Stem</th>
+          <th>Pad Behavior</th>
+          <th>Musical Use in a Live Set</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="col-key">WET KICK / 808</td>
+          <td class="col-tag">DRM / BAS · 1 beat</td>
+          <td>Velocity one-shot (no pitch shift on kicks; root-matched on 808s)</td>
+          <td>Layer your favorite kick punch under a thin breakdown, or finger-drum a stripped-back intro on the K.O. II.</td>
+        </tr>
+        <tr>
+          <td class="col-key">UKG WOBBLE</td>
+          <td class="col-tag">BAS · 1–2 bars</td>
+          <td>Beat-quantized sync loop, auto-warped &amp; Camelot pitch-locked</td>
+          <td>Keep a signature bassline alive across 15–20 minutes; punch it in for 2 bars to tease a drop or bridge two genres.</td>
+        </tr>
+        <tr>
+          <td class="col-key">VOCAL CHOP</td>
+          <td class="col-tag">VOX · 4 slices</td>
+          <td>Auto-sliced vocal transients on pads 5–8 through beat-synced delay</td>
+          <td>Play Fred again.. style rhythmic vocal stabs live over an instrumental groove without worrying about key clashes.</td>
+        </tr>
+        <tr>
+          <td class="col-key">K.O. II EXPORT</td>
+          <td class="col-tag">ANY PAD · .WAV</td>
+          <td>One-click trimmed 16-bit WAV export into <code>~/Music/vibedeck/samples/</code></td>
+          <td>Build a personal bank of your favorite harvested textures to drop straight onto the hardware K.O. II via TE's web tool.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer class="foot">
+    <span><strong>VIBEDECK</strong> · EP–133 K.O. II × B737 FIELD ESSAY</span>
+    <span>PAGE <strong>02</strong> / 04</span>
+  </footer>
+</article>
+
+<!-- ====================================================================== -->
+<!-- PAGE 3: INSTRUMENT VS DAW — PROTECTING SCOPE                           -->
+<!-- ====================================================================== -->
+<article class="sheet">
+  <div class="reg tl"></div><div class="reg tr"></div><div class="reg bl"></div><div class="reg br"></div>
+
+  <div class="run-head">
+    <span><strong>VIBEDECK</strong> — FIELD ESSAY &amp; ARCHITECTURE NOTES</span>
+    <span>PHILOSOPHY · INSTRUMENT VS. DAW</span>
+  </div>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">((3))</span>
+      <span class="sec-title">instrument vs. daw: why not an open-source ableton</span>
+      <span class="sec-sub">protecting live flow from scope creep</span>
+    </div>
+    <p>
+      Once you picture pulling kicks, wobbles, and vocal slices straight out of live tracks, a natural question pops up: <em>should we bring in an open-source Ableton-style engine?</em> It is a tempting thought, and it is also the single most important architectural line to draw clearly before building another line of code.
+    </p>
+    <p>
+      <strong>The honest answer is no — keep vibedeck an instrument, not a DAW.</strong> Digital audio workstations (Ableton Arrangement View, Ardour, Logic, LMMS) are designed for offline composition: multi-track timelines, piano rolls, VST plugin chains, complex bus routing, and microscopic mouse editing. The moment you drop DAW complexity into a live DJ console, it stops being playful. You stop listening to the room and start administering software.
+    </p>
+
+    <div class="callout">
+      <div class="callout-kicker">the 95% rule of live ableton sets</div>
+      <p>
+        Even artists who famously perform on Ableton Live ignore 95% of Ableton on stage. They are not opening synth patch browsers or drawing MIDI piano rolls mid-set — they are living entirely inside <strong>tempo-locked audio clips, a filter, a delay, and physical velocity pads.</strong> A focused Stem-to-Pad Harvester captures 100% of that live magic with virtually zero UI bloat.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <table class="spec">
+      <thead>
+        <tr>
+          <th>Approach</th>
+          <th>Strengths</th>
+          <th>Hidden Cost Live</th>
+          <th>Verdict for You</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="col-key">OPEN-SOURCE DAW</td>
+          <td>Unlimited timelines, MIDI sequencing, VST synth chains, full song production.</td>
+          <td>Menu-heavy, steep prep time, breaks spontaneous crate-digging flow.</td>
+          <td><strong>Skip inside vibedeck.</strong> Use a real DAW only if you ever want offline studio composition.</td>
+        </tr>
+        <tr>
+          <td class="col-key">VIBEDECK + HARVESTER</td>
+          <td>Two decks + 4-stem slicing + auto-BPM/key lock + 8 live callback pads + Set Planner.</td>
+          <td>Intentionally bounded to 8 live slots (forces curation over hoarding).</td>
+          <td><strong>Sweet spot.</strong> Turns your crate-digging ear straight into a playable live instrument.</td>
+        </tr>
+        <tr>
+          <td class="col-key">K.O. II STANDALONE</td>
+          <td>Battery-powered, ultra-tactile couch sketchpad, punch-in FX, crunchy hardware vibe.</td>
+          <td>Tiny display, 64 MB memory ceiling, steep muscle-memory curve at first.</td>
+          <td><strong>Best as both:</strong> tactile USB-C controller on desk; unplugged jam box with exported WAVs.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">((3.2))</span>
+      <span class="sec-title">the natural split with your ep–133 k.o. ii</span>
+      <span class="sec-sub">hardware feel without hardware friction</span>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-head">AT THE DESK (USB-C MIDI) <span>LIVE RIG</span></div>
+        <p>
+          Plugged into your MacBook Pro, the K.O. II gives you its single greatest physical asset — <strong>those crisp, velocity-sensitive mechanical pads, the fader, and the X/Y knobs</strong> — while <strong>vibedeck</strong> handles the screen, unlimited RAM, 4-stem separation, automatic key/tempo locking, and set-arc memory. You bypass 90% of the K.O. II's menu-diving while building genuine finger-drumming fluency on its exact pad layout.
+        </p>
+      </div>
+      <div class="card">
+        <div class="card-head">ON THE COUCH (UNPLUGGED) <span>SKETCHPAD</span></div>
+        <p>
+          Hardware samplers feel intimidating when you start with factory kits that don't match your taste — <em>everyone</em> makes rough, awkward loops on a K.O. II for the first couple months. Once you export your favorite harvested wet kicks, 808s, and vocal chops straight out of your own DJ crate into the K.O. II, suddenly every pad sounds like <em>your</em> record collection, and jamming unplugged becomes effortless.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span><strong>VIBEDECK</strong> · EP–133 K.O. II × B737 FIELD ESSAY</span>
+    <span>PAGE <strong>03</strong> / 04</span>
+  </footer>
+</article>
+
+<!-- ====================================================================== -->
+<!-- PAGE 4: THE CURATOR'S CRAFT & PRACTICE ROUTINE                         -->
+<!-- ====================================================================== -->
+<article class="sheet">
+  <div class="reg tl"></div><div class="reg tr"></div><div class="reg bl"></div><div class="reg br"></div>
+
+  <div class="run-head">
+    <span><strong>VIBEDECK</strong> — FIELD ESSAY &amp; ARCHITECTURE NOTES</span>
+    <span>CRAFT · TASTE, MUSCLE &amp; NEXT STEPS</span>
+  </div>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">((4))</span>
+      <span class="sec-title">the curator's craft: taste vs. mixing muscle</span>
+      <span class="sec-sub">why crate-digging is the hard 80%</span>
+    </div>
+    <p>
+      You mentioned feeling that your real strength as a DJ lives on the <strong>curation and crate-digging side</strong> — appreciating small sonic details, textures, and pockets — while still building the physical muscle memory of live mixing and sampling. That is not a weakness to apologize for; in DJ culture, it is the single hardest thing to develop.
+    </p>
+    <p>
+      Beatmatching, phrase counting, bass swaps, and filter sweeps are mechanical skills. Put in a handful of focused sessions and your hands simply learn them. <strong>Hearing why a particular wet kick, an 808 decay, or a two-bar vocal pocket belongs right after another record cannot be taught by a tutorial or faked by software.</strong> Nearly every respected selector — Ben UFO, Floating Points, Jamie xx, Four Tet — started as an obsessive listener whose taste pulled their technical hands forward, not the other way around.
+    </p>
+    <p>
+      The best part about how <strong>vibedeck</strong> is built right now is that it lets your ear lead while quietly training your hands by osmosis. Every time you run an automated transition and watch the Boeing 737 <code>LO</code> and <code>FLT</code> dials rotate across an 8-bar phrase, you are watching exact DJ mechanics happen in real time on <em>your own tracks</em> — and the instant you reach out and grab a knob, the machine steps aside.
+    </p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">((4.2))</span>
+      <span class="sec-title">four low-pressure reps for mixing muscle</span>
+      <span class="sec-sub">15 min · darty shortlist · zero homework</span>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-n">01</div>
+        <div class="step-body">
+          <h3>Watch the Autopilot Move the Dials</h3>
+          <p>Drop your <code>Darty Shortlist</code> folder in, open <code>((SET PLAN))</code>, load step 1 &amp; step 2, and press <code>▶ RUN</code>. Don't touch anything the first time — just watch <em>when</em> the bass swaps at bar 5, how far the <code>FLT</code> wedge turns, and how the waveforms line up.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-n">02</div>
+        <div class="step-body">
+          <h3>Steal Just One Knob Mid-Transition</h3>
+          <p>Next transition, hit <code>▶ RUN</code> again — then grab just the outgoing <code>LO</code> knob or the crossfader yourself. Touch-to-override immediately surrenders that one control to you while the engine handles the rest. One hand, zero panic.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-n">03</div>
+        <div class="step-body">
+          <h3>Ride the Arrangement Phrase Countdown</h3>
+          <p>Skip <code>▶ RUN</code> and watch the deck header countdown (e.g. <code>DROP → BREAK in 4.0</code>). Practice pressing <code>PLAY</code> on Deck B right as the bar hits <code>1</code>. Ninety percent of clean club transitions are simply starting the incoming record on the right downbeat.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-n">04</div>
+        <div class="step-body">
+          <h3>Keep the K.O. II Simple at First</h3>
+          <p>Start with only four muscle-memory moves on the hardware: <strong>Play</strong>, <strong>Cue</strong>, <strong>4-Beat Loop Roll</strong>, and <strong>Echo Out</strong>. Once those four feel automatic without looking down, adding harvested kicks and vocal callbacks on the remaining pads will feel like second nature.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="callout">
+    <div class="callout-kicker">where we pick up next session · pillar 6 blueprint</div>
+    <p>
+      <strong>1) Stem-Lane Clip Selection:</strong> drag across 1 beat or 1–2 bars of any stem (<code>DRM / BAS / OTH / VOX</code>) and click <em>Send to Pad 1–8</em> (plus an <em>Auto-Harvest</em> button that grabs the cleanest kick, bass hit, and two vocal chops automatically). &nbsp;<strong>2) Live Warp &amp; Camelot Key Lock:</strong> route each harvested pad through <code>signalsmith-stretch</code> so callbacks stay tempo-synced and in key 20 minutes later. &nbsp;<strong>3) One-Shot / Sync-Loop Toggle + WAV Export</strong> straight to your physical EP–133 K.O. II.
+    </p>
+  </section>
+
+  <footer class="foot">
+    <span><strong>VIBEDECK</strong> · EP–133 K.O. II × B737 FIELD ESSAY</span>
+    <span>PAGE <strong>04</strong> / 04</span>
+  </footer>
+</article>
+
+</body>
+</html>
