@@ -394,6 +394,8 @@ async function attachStems(deck: Deck, track: Track): Promise<void> {
     stemSavedGain[deck.id] = [1, 1, 1, 1]
     updateStemsUI(deck)
     syncWaveformModeButtons(deck)
+    wfFor(deck).markDirty()
+    wfFor(deck).draw(deck)
     audioMem.track(track.id, track.name, AudioMemory.bytesOf(...bufs))
     renderCopilot()
   } catch (e) {
@@ -547,6 +549,8 @@ async function loadTrackIntoDeck(
     updateStemsUI(deck)
     syncWaveformModeButtons(deck)
     updateStemsButtons()
+    wf.markDirty()
+    wf.draw(deck)
     renderCopilot()
 
     // Auto-queue stems on loaded local tracks whenever demucs is available
@@ -967,13 +971,24 @@ document.addEventListener('keyup', (e) => {
 // file input: drag & drop (files + recursive folders) + browse + progress bar
 // ---------------------------------------------------------------------------
 
-let dragDepth = 0
+let dropHideTimer: number | null = null
 let importGen = 0
 let importHideTimer: number | null = null
 
 function hideDropOverlay(): void {
-  dragDepth = 0
+  if (dropHideTimer != null) {
+    window.clearTimeout(dropHideTimer)
+    dropHideTimer = null
+  }
   refs.dropOverlay.hidden = true
+}
+
+function showDropOverlayTransient(): void {
+  refs.dropOverlay.hidden = false
+  if (dropHideTimer != null) window.clearTimeout(dropHideTimer)
+  // Self-healing heartbeat: dragover fires every ~50ms while files are held over the window;
+  // if the drag exits, cancels, or drops anywhere, the overlay is guaranteed to vanish cleanly.
+  dropHideTimer = window.setTimeout(hideDropOverlay, 180)
 }
 
 function showImportBar(pctVal: number, text: string, pulsing = false): void {
@@ -1008,14 +1023,14 @@ function dropTargetDeck(target: EventTarget | null): Deck | undefined {
   return undefined
 }
 
-document.addEventListener('dragenter', (e) => {
-  if (!e.dataTransfer?.types?.includes('Files')) return
-  dragDepth++
-  refs.dropOverlay.hidden = false
+document.addEventListener('dragover', (e) => {
+  e.preventDefault()
+  if (e.dataTransfer?.types?.includes('Files')) showDropOverlayTransient()
 })
-document.addEventListener('dragleave', () => {
-  dragDepth = Math.max(0, dragDepth - 1)
-  if (dragDepth === 0) refs.dropOverlay.hidden = true
+document.addEventListener('dragend', hideDropOverlay)
+document.addEventListener('pointerdown', hideDropOverlay, { capture: true })
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') hideDropOverlay()
 })
 window.addEventListener('blur', () => {
   hideDropOverlay()
@@ -1027,7 +1042,6 @@ window.addEventListener('blur', () => {
     if (!txRunner.isRunning && d.fx.echoActive) d.fx.echoOutRelease()
   }
 })
-document.addEventListener('dragover', (e) => e.preventDefault())
 document.addEventListener('drop', (e) => {
   e.preventDefault()
   hideDropOverlay()
@@ -1606,6 +1620,15 @@ let lastMemEnforce = 0
 let lastCopilotUpdate = 0
 
 function tick(): void {
+  requestAnimationFrame(tick)
+  try {
+    tickBody()
+  } catch (err) {
+    console.error('[vibedeck tick]', err)
+  }
+}
+
+function tickBody(): void {
   const now = performance.now()
   if (txRunner.isRunning) {
     txRunner.update()
@@ -1738,7 +1761,6 @@ function tick(): void {
     refs.recBtn.dataset.lbl = recLabel
     refs.recBtn.innerHTML = `<svg class="ico" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.2" fill="${recorder.recording ? '#ffffff' : '#e11d48'}"/></svg> ${recLabel}`
   }
-  requestAnimationFrame(tick)
 }
 
 // ---------------------------------------------------------------------------

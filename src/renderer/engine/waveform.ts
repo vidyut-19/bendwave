@@ -282,9 +282,13 @@ export class WaveformView {
       const resize = () => {
         const dpr = window.devicePixelRatio || 1
         const r = canvas.getBoundingClientRect()
-        canvas.width = Math.max(1, Math.floor(r.width * dpr))
-        canvas.height = Math.max(1, Math.floor(r.height * dpr))
-        this.dirty = true
+        const nw = Math.max(1, Math.floor(r.width * dpr))
+        const nh = Math.max(1, Math.floor(r.height * dpr))
+        if (canvas.width !== nw || canvas.height !== nh) {
+          canvas.width = nw
+          canvas.height = nh
+          this.dirty = true
+        }
       }
       new ResizeObserver(resize).observe(canvas)
       resize()
@@ -399,6 +403,16 @@ export class WaveformView {
 
   draw(deck: Deck): void {
     this.dirty = false
+    const dpr = window.devicePixelRatio || 1
+    for (const c of [this.overviewCanvas, this.detailCanvas]) {
+      const r = c.getBoundingClientRect()
+      const nw = Math.max(1, Math.floor(r.width * dpr))
+      const nh = Math.max(1, Math.floor(r.height * dpr))
+      if (r.width > 0 && r.height > 0 && (c.width !== nw || c.height !== nh)) {
+        c.width = nw
+        c.height = nh
+      }
+    }
     const light = isLightTheme()
     this.drawOverview(deck, light)
     this.drawDetail(deck, light)
