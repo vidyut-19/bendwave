@@ -25,6 +25,7 @@ export interface DeckRefs {
   gridToggleBtn: HTMLButtonElement
   gridPopover: HTMLElement
   autoCuesBtn: HTMLButtonElement
+  harvestBtn: HTMLButtonElement
   getStemsBtn: HTMLButtonElement
   wfRgbBtn: HTMLButtonElement
   wfBandsBtn: HTMLButtonElement
@@ -70,6 +71,10 @@ export interface AppRefs {
   autoGainBtn: HTMLButtonElement
   recBtn: HTMLButtonElement
   samplerPads: HTMLButtonElement[]
+  samplerSyncBadge: HTMLElement
+  samplerFxBtn: HTMLButtonElement
+  samplerStopBtn: HTMLButtonElement
+  padMenu: HTMLElement
   samplerVol: BoeingKnob
   themeBtn: HTMLButtonElement
   importBar: HTMLElement
@@ -198,12 +203,13 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
       </div>
       <div class="grid-group">
         <button class="mini-btn auto-cues-btn" title="Drop Hot Cues 1–4 onto Intro / Drop 1 / Break / Drop 2">AUTO CUES</button>
+        <button class="mini-btn harvest-btn" title="Auto-harvest wet kick, bass wobble &amp; vocal chops straight onto Sampler pads">HARVEST</button>
         <button class="mini-btn get-stems-btn" hidden title="Separate Drums / Bass / Other / Vocals via Demucs">${ICO_STEMS} STEMS</button>
-        <button class="mini-btn grid-toggle-btn" title="Open beatgrid & measure editor">GRID ▾</button>
+        <button class="mini-btn grid-toggle-btn" title="Open beatgrid &amp; measure editor">GRID ▾</button>
       </div>
     </div>
 
-    <div class="waveform-box" title="Close-up scrolling waveform — drag to scrub, wheel to zoom">
+    <div class="waveform-box" title="Close-up scrolling waveform — drag to scrub · ⇧+drag to harvest slice onto pad · wheel to zoom">
       <canvas class="waveform"></canvas>
       <div class="grid-popover" hidden>
         <button class="mini-btn accent-gold" data-act="deck${id}.setBar1" title="Anchor Bar 1, Beat 1 at current playhead">${ICO_FLAG} 1</button>
@@ -230,19 +236,19 @@ const DECK_TEMPLATE = (id: 'A' | 'B') => `
 
   <div class="stems-row" hidden>
     <div class="stem stem-drums">
-      <button class="stem-pill" data-stem="0" title="Click mute · Shift+click solo">DRM</button>
+      <button class="stem-pill" data-stem="0" title="Click mute · ⇧-click solo · ⌥-click harvest to pad">DRM</button>
       <input type="range" min="0" max="1" step="0.01" value="1" />
     </div>
     <div class="stem stem-bass">
-      <button class="stem-pill" data-stem="1" title="Click mute · Shift+click solo">BAS</button>
+      <button class="stem-pill" data-stem="1" title="Click mute · ⇧-click solo · ⌥-click harvest to pad">BAS</button>
       <input type="range" min="0" max="1" step="0.01" value="1" />
     </div>
     <div class="stem stem-other">
-      <button class="stem-pill" data-stem="2" title="Click mute · Shift+click solo">OTH</button>
+      <button class="stem-pill" data-stem="2" title="Click mute · ⇧-click solo · ⌥-click harvest to pad">OTH</button>
       <input type="range" min="0" max="1" step="0.01" value="1" />
     </div>
     <div class="stem stem-vocals">
-      <button class="stem-pill" data-stem="3" title="Click mute · Shift+click solo">VOX</button>
+      <button class="stem-pill" data-stem="3" title="Click mute · ⇧-click solo · ⌥-click harvest to pad">VOX</button>
       <input type="range" min="0" max="1" step="0.01" value="1" />
     </div>
   </div>
@@ -454,6 +460,7 @@ function buildDeck(id: 'A' | 'B'): DeckRefs {
     gridToggleBtn: q('.grid-toggle-btn'),
     gridPopover: q('.grid-popover'),
     autoCuesBtn: q('.auto-cues-btn'),
+    harvestBtn: q('.harvest-btn'),
     getStemsBtn: q('.get-stems-btn'),
     wfRgbBtn: q('.wf-rgb'),
     wfBandsBtn: q('.wf-bands'),
@@ -502,7 +509,7 @@ export function buildApp(root: HTMLElement): AppRefs {
     <div class="brand">
       <span class="brand-tag">EP–133</span>
       <h1>bendwave</h1>
-      <span class="brand-ver">v1.5</span>
+      <span class="brand-ver">v1.6</span>
     </div>
     <span class="header-spacer"></span>
     <span class="mem-meter"></span>
@@ -542,10 +549,17 @@ export function buildApp(root: HTMLElement): AppRefs {
       <button class="t-btn rec-btn" data-act="mix.record" title="record master bus to ~/Music/bendwave/">${ICO_REC} REC</button>
     </div>
     <div class="mixer-knobs"></div>
-    <div class="sampler-box" title="Drop audio files onto pads 1–8 · ⌥-click to clear">
-      <div class="panel-title">((SAMPLER))</div>
+    <div class="sampler-box">
+      <div class="sampler-head">
+        <span class="panel-title">((SAMPLER))</span>
+        <span class="sampler-sync" title="Live BPM &amp; Camelot key lock target"></span>
+        <button class="mini-btn sampler-fx active" title="Beat-synced Space FX (delay + reverb) for vocal &amp; synth chops">FX</button>
+        <button class="mini-btn sampler-stop" title="Stop all active sampler loops">■</button>
+      </div>
       <div class="sampler-pads">
-        ${[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `<button class="smp" data-act="sampler.pad${n}">${n}</button>`).join('\n        ')}
+        ${[1, 2, 3, 4, 5, 6, 7, 8]
+          .map((n) => `<button class="smp" data-act="sampler.pad${n}"><span class="smp-num">${n}</span><span class="smp-lbl"></span></button>`)
+          .join('\n        ')}
       </div>
     </div>`
 
@@ -660,7 +674,11 @@ export function buildApp(root: HTMLElement): AppRefs {
       <div class="log-lines"></div>
     </section>`
 
-  root.append(header, importBar, main, footer, dropOverlay)
+  const padMenu = document.createElement('div')
+  padMenu.className = 'pad-menu'
+  padMenu.hidden = true
+
+  root.append(header, importBar, main, footer, dropOverlay, padMenu)
 
   return {
     deckA,
@@ -672,6 +690,10 @@ export function buildApp(root: HTMLElement): AppRefs {
     autoGainBtn: mixer.querySelector('.auto-gain') as HTMLButtonElement,
     recBtn: mixer.querySelector('.rec-btn') as HTMLButtonElement,
     samplerPads: Array.from(mixer.querySelectorAll<HTMLButtonElement>('.smp')),
+    samplerSyncBadge: mixer.querySelector('.sampler-sync') as HTMLElement,
+    samplerFxBtn: mixer.querySelector('.sampler-fx') as HTMLButtonElement,
+    samplerStopBtn: mixer.querySelector('.sampler-stop') as HTMLButtonElement,
+    padMenu,
     samplerVol: samplerKnob,
     themeBtn: header.querySelector('.theme-btn') as HTMLButtonElement,
     importBar,

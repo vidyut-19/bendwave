@@ -6,6 +6,8 @@ declare global {
     selectAudio(): Promise<string[]>
     expandPaths(paths: string[]): Promise<string[]>
     readAudio(p: string): Promise<Uint8Array>
+    savePadWav(filename: string, bytes: Uint8Array): Promise<string>
+    exportSampleWav(filename: string, bytes: Uint8Array): Promise<string>
     filePathFor(f: File): string
     crateLoad(): Promise<{ version?: number; tracks?: unknown[] }>
     crateSave(data: unknown): Promise<boolean>

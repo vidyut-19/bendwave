@@ -220,6 +220,10 @@ export class Deck {
     return this.stemLayers[i]?.gain.gain.value ?? 1
   }
 
+  getStemBuffer(i: number): AudioBuffer | null {
+    return this.stemLayers[i]?.buffer ?? null
+  }
+
   /** current musical position relative to Bar 1, Beat 1 (grid.offset) */
   get barBeat(): { bar: number; beat: number; beatsPerBar: number; totalBars: number } | null {
     const grid = this.track?.grid

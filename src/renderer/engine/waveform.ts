@@ -265,12 +265,15 @@ export class WaveformView {
   private lastT0 = 0
   private hoverOverviewFrac: number | null = null
   private lastOverviewSections: TrackSection[] = []
+  private harvestDrag: { stemIdx: number | 'mix'; tA: number; tB: number } | null = null
 
   mode: WaveformMode = 'rgb'
   zoomSec = 10
   dirty = true
   onSeek?: (timeSec: number) => void
   onModeChange?: (mode: WaveformMode) => void
+  /** Fired when user Shift-drags across the close-up waveform to harvest a slice onto a pad. */
+  onHarvestSlice?: (stemIdx: number | 'mix', startSec: number, durSec: number) => void
 
   constructor(overviewCanvas: HTMLCanvasElement, detailCanvas: HTMLCanvasElement) {
     this.overviewCanvas = overviewCanvas
@@ -328,19 +331,58 @@ export class WaveformView {
       this.dirty = true
     })
 
-    const seekDetail = (e: PointerEvent) => {
-      if (!this.onSeek || !this.freq) return
+    const detailTimeAt = (e: PointerEvent): number => {
       const rect = detailCanvas.getBoundingClientRect()
       const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
-      this.onSeek(this.lastT0 + frac * this.zoomSec)
+      return Math.max(0, Math.min(this.duration, this.lastT0 + frac * this.zoomSec))
+    }
+    const detailStemAt = (e: PointerEvent): number | 'mix' => {
+      if (this.mode !== 'stems' || !this.hasStems) return 'mix'
+      const rect = detailCanvas.getBoundingClientRect()
+      const rulerCss = 16
+      const relY = Math.max(0, e.clientY - rect.top - rulerCss)
+      const bodyCss = Math.max(1, rect.height - rulerCss)
+      return Math.min(3, Math.max(0, Math.floor((relY / bodyCss) * 4)))
+    }
+    const seekDetail = (e: PointerEvent) => {
+      if (!this.onSeek || !this.freq) return
+      this.onSeek(detailTimeAt(e))
       this.dirty = true
     }
     detailCanvas.addEventListener('pointerdown', (e) => {
+      if (!this.freq) return
       detailCanvas.setPointerCapture(e.pointerId)
+      if (e.shiftKey && this.onHarvestSlice) {
+        const t = detailTimeAt(e)
+        this.harvestDrag = { stemIdx: detailStemAt(e), tA: t, tB: t }
+        this.dirty = true
+        return
+      }
       seekDetail(e)
     })
     detailCanvas.addEventListener('pointermove', (e) => {
+      if (this.harvestDrag && (e.buttons & 1)) {
+        this.harvestDrag.tB = detailTimeAt(e)
+        this.dirty = true
+        return
+      }
       if (e.buttons & 1) seekDetail(e)
+    })
+    const endHarvest = () => {
+      const d = this.harvestDrag
+      if (!d) return
+      this.harvestDrag = null
+      this.dirty = true
+      const start = Math.min(d.tA, d.tB)
+      const dur = Math.abs(d.tB - d.tA)
+      this.onHarvestSlice?.(d.stemIdx, start, dur)
+    }
+    detailCanvas.addEventListener('pointerup', endHarvest)
+    detailCanvas.addEventListener('pointercancel', () => {
+      if (this.harvestDrag) {
+        this.harvestDrag = null
+        this.dirty = true
+      }
     })
     detailCanvas.addEventListener(
       'wheel',
@@ -830,6 +872,39 @@ export class WaveformView {
     for (let i = 0; i < deck.hotCues.length && i < HC_COLORS.length; i++) {
       const hc = deck.hotCues[i]
       if (hc != null) this.drawDetailFlag(g, w, h, rulerH, t0, secPerPx, dpr, hc, HC_COLORS[i], String(i + 1))
+    }
+
+    // Active Shift+Drag Harvest Selection Bracket
+    if (this.harvestDrag) {
+      const d = this.harvestDrag
+      const sT0 = Math.min(d.tA, d.tB)
+      const sT1 = Math.max(d.tA, d.tB)
+      const sx0 = Math.max(0, Math.round((sT0 - t0) / secPerPx))
+      const sx1 = Math.min(w, Math.max(sx0 + Math.round(4 * dpr), Math.round((sT1 - t0) / secPerPx)))
+      const isLane = d.stemIdx !== 'mix' && this.mode === 'stems' && this.hasStems
+      const laneH = bodyH / 4
+      const sy0 = isLane ? bodyY + (d.stemIdx as number) * laneH : bodyY
+      const syH = isLane ? laneH : bodyH
+      const stemCols = ['#d97706', '#e11d48', '#0284c7', '#7c3aed']
+      const col = isLane ? stemCols[d.stemIdx as number] : '#f05a24'
+      g.fillStyle = col + '33'
+      g.fillRect(sx0, sy0, sx1 - sx0, syH)
+      g.strokeStyle = col
+      g.lineWidth = Math.max(1.5, 2 * dpr)
+      g.strokeRect(sx0 + 0.5, sy0 + 0.5, Math.max(2, sx1 - sx0 - 1), Math.max(2, syH - 1))
+      g.lineWidth = 1
+      const bpm = deck.track?.grid?.bpm ?? 120
+      const beats = Math.max(0.5, Math.round(((sT1 - sT0) / (60 / bpm)) * 2) / 2)
+      const lbl = `HARVEST ${beats}B`
+      g.font = `700 ${8.5 * dpr}px "Geist Mono", "GeistMono Nerd Font Mono", "GeistMono Nerd Font", ui-monospace, monospace`
+      const tw = g.measureText(lbl).width + 8 * dpr
+      g.fillStyle = col
+      g.fillRect(sx0, Math.max(rulerH, sy0), tw, 13 * dpr)
+      g.fillStyle = '#ffffff'
+      g.textAlign = 'left'
+      g.textBaseline = 'middle'
+      g.fillText(lbl, sx0 + 4 * dpr, Math.max(rulerH, sy0) + 6.5 * dpr)
+      g.textBaseline = 'alphabetic'
     }
 
     // Playhead

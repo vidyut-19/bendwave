@@ -18,7 +18,8 @@ import { computeFingerprint, describeFingerprint } from './engine/fingerprint'
 import { planTransition, recommendNext, type VibeMode } from './engine/copilot'
 import { planSetPath, type SetArc, type AutoStrategy } from './engine/planner'
 import { TransitionRunner, drawTransitionCurves, STRATEGY_META } from './engine/transition'
-import { Sampler } from './engine/sampler'
+import { Sampler, type PadMeta } from './engine/sampler'
+import { autoHarvestDeck, encodeWav16, grabStemSlice, type HarvestedClip } from './engine/harvester'
 import { Recorder } from './engine/recorder'
 import { DeckMeterView, MasterMeterView } from './engine/meter'
 import type { MidiBinding } from './midi/midi'
@@ -1032,6 +1033,7 @@ document.addEventListener('pointerdown', hideDropOverlay, { capture: true })
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     hideDropOverlay()
+    hidePadMenu()
     for (const r of [refs.deckA, refs.deckB]) {
       if (!r.gridPopover.hidden) {
         r.gridPopover.hidden = true
@@ -1305,6 +1307,15 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
     wf.markDirty()
   }
   wf.onModeChange = () => syncWaveformModeButtons(deck)
+  wf.onHarvestSlice = (stemIdx, startSec, durSec) => {
+    const bpm = deck.track?.grid?.bpm && deck.track.grid.bpm > 0 ? deck.track.grid.bpm : 120
+    const beatDur = 60 / bpm
+    // Quantize dragged span to musical beat lengths (0.5, 1, 2, 4, 8 beats)
+    const rawBeats = durSec / beatDur
+    const beats = rawBeats < 0.75 ? 0.5 : rawBeats < 1.5 ? 1 : rawBeats < 3 ? 2 : rawBeats < 6 ? 4 : 8
+    const clip = grabStemSlice(engine.ctx, deck, stemIdx, { startSec, beats })
+    if (clip) void storeHarvestedClip(clip)
+  }
   waveforms.set(deck.id, wf)
   deckMeters.set(deck.id, new DeckMeterView(r.vuCanvas, deck.id))
 
@@ -1378,6 +1389,26 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
     log(`deck ${deck.id}: auto-set hot cues on Intro / Drop / Break`)
   })
 
+  r.harvestBtn.addEventListener('click', () => {
+    if (!deck.hasAudio) {
+      log(`deck ${deck.id}: load a track first to harvest stem gems`)
+      return
+    }
+    const clips = autoHarvestDeck(engine.ctx, deck)
+    if (!clips.length) {
+      log(`deck ${deck.id}: nothing harvestable found`)
+      return
+    }
+    void (async () => {
+      const assigned: string[] = []
+      for (const c of clips) {
+        const slot = await storeHarvestedClip(c)
+        assigned.push(`P${slot + 1}:${c.shortLabel}`)
+      }
+      log(`harvested deck ${deck.id} → ${assigned.join(' · ')} (right-click any pad for loop / key-lock / K.O. II WAV export)`)
+    })()
+  })
+
   r.getStemsBtn.addEventListener('click', () => {
     const t = deck.track
     if (!t) return
@@ -1408,6 +1439,15 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   })
   r.stemMuteBtns.forEach((btn, i) => {
     btn.addEventListener('click', (e) => {
+      if (e.altKey) {
+        const clip = grabStemSlice(engine.ctx, deck, i)
+        if (clip) {
+          void storeHarvestedClip(clip).then((slot) =>
+            log(`harvested ${clip.name} → Pad ${slot + 1} (${clip.mode === 'loop' ? 'sync loop' : 'one-shot'})`)
+          )
+        }
+        return
+      }
       if (txRunner.active) txRunner.override(deck === txRunner.active.outDeck ? 'outStems' : 'inStems')
       const saved = stemSavedGain[deck.id]
       if (e.shiftKey) {
@@ -1673,41 +1713,188 @@ window.vibedeck?.onTouchBarAction((ev) => {
 })
 
 // ---------------------------------------------------------------------------
-// sampler: pads, drag & drop, persistence
+// sampler: harvested DNA pads, sync loops, Camelot key-lock, K.O. II WAV export
 // ---------------------------------------------------------------------------
 
+let nextPadCursor = 0
+
+function hidePadMenu(): void {
+  refs.padMenu.hidden = true
+}
+
+document.addEventListener('pointerdown', (e) => {
+  if (!refs.padMenu.hidden && !(e.target instanceof Node && refs.padMenu.contains(e.target))) {
+    hidePadMenu()
+  }
+})
+
+function pickHarvestSlot(): number {
+  const empty = sampler.firstEmptySlot()
+  if (empty >= 0) return empty
+  // Never stomp an actively looping pad when recycling slots
+  for (let tries = 0; tries < sampler.count; tries++) {
+    const idx = (nextPadCursor + tries) % sampler.count
+    if (!sampler.info(idx)?.looping) {
+      nextPadCursor = (idx + 1) % sampler.count
+      return idx
+    }
+  }
+  const idx = nextPadCursor % sampler.count
+  nextPadCursor = (idx + 1) % sampler.count
+  return idx
+}
+
+async function storeHarvestedClip(clip: HarvestedClip, preferredSlot?: number): Promise<number> {
+  const slot = preferredSlot ?? pickHarvestSlot()
+  let savedPath = ''
+  if (window.vibedeck?.savePadWav) {
+    try {
+      const wav = encodeWav16(clip.buffer)
+      const fn = `pad${slot + 1}-${clip.stem}-${Date.now().toString(36)}.wav`
+      savedPath = await window.vibedeck.savePadWav(fn, wav)
+    } catch {
+      /* in-memory fallback */
+    }
+  }
+  sampler.load(slot, clip.name, savedPath, clip.buffer, {
+    shortLabel: clip.shortLabel,
+    stem: clip.stem,
+    sourceBpm: clip.sourceBpm,
+    camelot: clip.camelot,
+    beats: clip.beats,
+    mode: clip.mode,
+    keyLock: clip.keyLock,
+    bpmSync: !!(clip.sourceBpm && clip.sourceBpm > 0),
+    fxSend: clip.fxSend
+  })
+  audioMem.track(`smp:${slot + 1}`, `pad:${clip.name}`, AudioMemory.bytesOf(clip.buffer))
+  persistSampler()
+  updateSamplerUI()
+  return slot
+}
+
+const STEM_CLASSES = ['stem-drums', 'stem-bass', 'stem-other', 'stem-vocals', 'stem-mix', 'stem-file'] as const
+
 function updateSamplerUI(): void {
+  refs.samplerFxBtn.classList.toggle('active', sampler.spaceEnabled)
   refs.samplerPads.forEach((pad, i) => {
     const info = sampler.info(i)
     pad.classList.toggle('loaded', !!info)
-    pad.title = info ? info.name : 'empty — drop an audio file here'
+    pad.classList.toggle('looping', !!info?.looping)
+    pad.classList.toggle('rendering', !!info?.rendering)
+    for (const c of STEM_CLASSES) pad.classList.remove(c)
+    const lblEl = pad.querySelector('.smp-lbl')
+    if (info) {
+      pad.classList.add(`stem-${info.stem}`)
+      const loopMark = info.mode === 'loop' ? '↻' : ''
+      if (lblEl) lblEl.textContent = `${loopMark}${info.shortLabel}`
+      const shiftStr =
+        info.keyLock && info.semitoneShift !== 0
+          ? ` · shift ${info.semitoneShift > 0 ? '+' : ''}${info.semitoneShift}st`
+          : ''
+      const bpmStr = info.sourceBpm ? ` · ${info.sourceBpm.toFixed(0)} BPM` : ''
+      const keyStr = info.camelot ? ` · ${info.camelot}` : ''
+      pad.title = `${info.name}${bpmStr}${keyStr}${shiftStr} · ${info.mode === 'loop' ? 'SYNC LOOP' : 'ONE-SHOT'} · right-click options · ⌥-click clear`
+    } else {
+      if (lblEl) lblEl.textContent = ''
+      pad.title = 'empty — drop audio, click HARVEST, ⇧+drag waveform, or ⌥-click a stem pill'
+    }
   })
 }
 
-function persistSampler(): void {
-  const recs = Array.from({ length: sampler.count }, (_, i) => {
-    const info = sampler.info(i)
-    return info ? { name: info.name, path: info.path } : null
+sampler.onChange = updateSamplerUI
+
+function openPadMenu(i: number, x: number, y: number): void {
+  const info = sampler.info(i)
+  if (!info) return
+  const m = refs.padMenu
+  const shiftTxt =
+    info.keyLock && info.semitoneShift !== 0
+      ? ` (${info.semitoneShift > 0 ? '+' : ''}${info.semitoneShift}st)`
+      : ''
+  m.innerHTML = `
+    <div class="pad-menu-title">PAD ${i + 1} · ${escapeHtml(info.name)}</div>
+    <button class="pm-mode">MODE: ${info.mode === 'loop' ? 'SYNC LOOP ↻ → ONE-SHOT' : 'ONE-SHOT → SYNC LOOP ↻'}</button>
+    <button class="pm-key">KEY LOCK: ${info.keyLock ? `ON${shiftTxt}` : 'OFF'}</button>
+    <button class="pm-fx">SPACE FX: ${info.fxSend ? 'ON' : 'OFF'}</button>
+    <button class="pm-export">EXPORT .WAV (K.O. II)</button>
+    <button class="pm-clear danger">CLEAR PAD</button>`
+  m.querySelector('.pm-mode')?.addEventListener('click', () => {
+    const next = sampler.toggleMode(i)
+    persistSampler()
+    hidePadMenu()
+    if (next) log(`pad ${i + 1} mode → ${next === 'loop' ? 'SYNC LOOP ↻' : 'ONE-SHOT'}`)
   })
-  localStorage.setItem(SAMPLER_KEY, JSON.stringify(recs))
+  m.querySelector('.pm-key')?.addEventListener('click', () => {
+    const on = sampler.toggleKeyLock(i)
+    persistSampler()
+    hidePadMenu()
+    log(`pad ${i + 1} Camelot key lock → ${on ? 'ON' : 'OFF'}`)
+  })
+  m.querySelector('.pm-fx')?.addEventListener('click', () => {
+    const on = sampler.toggleFxSend(i)
+    persistSampler()
+    hidePadMenu()
+    log(`pad ${i + 1} space FX → ${on ? 'ON' : 'OFF'}`)
+  })
+  m.querySelector('.pm-export')?.addEventListener('click', () => {
+    hidePadMenu()
+    const raw = sampler.getRawBuffer(i)
+    if (!raw || !window.vibedeck?.exportSampleWav) return
+    const wav = encodeWav16(raw)
+    const bpmPart = info.sourceBpm ? `-${Math.round(info.sourceBpm)}bpm` : ''
+    const keyPart = info.camelot ? `-${info.camelot}` : ''
+    const fn = `${info.name}${bpmPart}${keyPart}.wav`
+    void window.vibedeck.exportSampleWav(fn, wav).then((out) => {
+      log(`exported pad ${i + 1} → ${out} (ready for K.O. II Sample Tool!)`)
+    })
+  })
+  m.querySelector('.pm-clear')?.addEventListener('click', () => {
+    sampler.clear(i)
+    audioMem.release(`smp:${i + 1}`)
+    persistSampler()
+    hidePadMenu()
+    log(`sampler slot ${i + 1} cleared`)
+  })
+  m.hidden = false
+  const rect = m.getBoundingClientRect()
+  const left = Math.min(window.innerWidth - rect.width - 8, Math.max(8, x))
+  const top = Math.min(window.innerHeight - rect.height - 8, Math.max(8, y - rect.height))
+  m.style.left = `${left}px`
+  m.style.top = `${top}px`
+}
+
+function persistSampler(): void {
+  localStorage.setItem(SAMPLER_KEY, JSON.stringify(sampler.serialize()))
 }
 
 async function restoreSampler(): Promise<void> {
   try {
-    const recs = JSON.parse(localStorage.getItem(SAMPLER_KEY) ?? '[]') as ({ name: string; path: string } | null)[]
+    const recs = JSON.parse(localStorage.getItem(SAMPLER_KEY) ?? '[]') as (Partial<PadMeta> | null)[]
     let n = 0
     for (let i = 0; i < sampler.count && i < recs.length; i++) {
       const r = recs[i]
-      if (!r?.path) continue
+      if (!r?.path || !r.name) continue
       try {
         const b = await decodePath(r.path)
-        sampler.load(i, r.name, r.path, b)
+        sampler.load(i, r.name, r.path, b, {
+          shortLabel: r.shortLabel,
+          stem: r.stem ?? 'file',
+          sourceBpm: r.sourceBpm,
+          camelot: r.camelot,
+          beats: r.beats,
+          mode: r.mode ?? 'oneshot',
+          keyLock: r.keyLock ?? false,
+          bpmSync: r.bpmSync ?? false,
+          fxSend: r.fxSend ?? false
+        })
+        audioMem.track(`smp:${i + 1}`, `pad:${r.name}`, AudioMemory.bytesOf(b))
         n++
       } catch {
         /* file moved or deleted */
       }
     }
-    if (n > 0) log(`sampler: restored ${n} slot(s)`)
+    if (n > 0) log(`sampler: restored ${n} pad(s)`)
   } catch {
     /* corrupt config */
   }
@@ -1715,9 +1902,23 @@ async function restoreSampler(): Promise<void> {
 }
 
 refs.samplerVol.oninput = (v) => sampler.setMaster(v)
+refs.samplerFxBtn.addEventListener('click', () => {
+  sampler.setSpaceEnabled(!sampler.spaceEnabled)
+  log(`sampler space FX ${sampler.spaceEnabled ? 'ON' : 'OFF'}`)
+})
+refs.samplerStopBtn.addEventListener('click', () => {
+  sampler.stopAllLoops()
+  log('sampler: stopped all loops')
+})
 
 refs.samplerPads.forEach((pad, i) => {
+  pad.addEventListener('contextmenu', (e) => {
+    e.preventDefault()
+    openPadMenu(i, e.clientX, e.clientY)
+  })
   pad.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return
+    hidePadMenu()
     if (e.altKey) {
       sampler.clear(i)
       audioMem.release(`smp:${i + 1}`)
@@ -1744,7 +1945,7 @@ refs.samplerPads.forEach((pad, i) => {
         const buffer = await decodeFile(f)
         const path = window.vibedeck?.filePathFor(f) ?? f.name
         const name = f.name.replace(/\.[^.]+$/, '')
-        sampler.load(i, name, path, buffer)
+        sampler.load(i, name, path, buffer, { stem: 'file', shortLabel: name.slice(0, 6).toUpperCase() })
         persistSampler()
         updateSamplerUI()
         audioMem.track(`smp:${i + 1}`, `sample:${name}`, AudioMemory.bytesOf(buffer))
@@ -1807,7 +2008,21 @@ function tickBody(): void {
     for (const label of evicted) log(`memory: over budget — evicted ${label}`)
   }
   const updateFxBpm = now - lastFxBpmUpdate > 250
-  if (updateFxBpm) lastFxBpmUpdate = now
+  if (updateFxBpm) {
+    lastFxBpmUpdate = now
+    const masterDeck = activeDeckPair().out
+    const mBpm = masterDeck.effectiveBpm ?? masterDeck.track?.grid?.bpm ?? 0
+    const mCam = masterDeck.track?.camelot
+    let nextBeatSec = 0
+    if (masterDeck.playing && mBpm > 0 && masterDeck.track?.grid) {
+      const g = masterDeck.track.grid
+      const beatTrack = 60 / g.bpm
+      const ph = ((((masterDeck.audiblePosition - g.offset) / beatTrack) % 1) + 1) % 1
+      nextBeatSec = ((1 - ph) * beatTrack) / masterDeck.effRate
+    }
+    sampler.setMasterContext(mBpm, mCam, nextBeatSec)
+    refs.samplerSyncBadge.textContent = mBpm > 0 ? `${Math.round(mBpm)}${mCam ? `·${mCam}` : ''}` : ''
+  }
   for (const deck of [engine.deckA, engine.deckB]) {
     const r = deckRefs(deck)
     const wf = wfFor(deck)
@@ -2168,11 +2383,10 @@ const KO2_PAD_ACTIONS: [number, string][] = [
   [60, 'deckB.play'], [61, 'deckB.cue'], [62, 'deckB.setCue'], [63, 'deckB.sync'],
   [64, 'deckB.hotcue1'], [65, 'deckB.hotcue2'], [66, 'deckB.hotcue3'], [67, 'deckB.hotcue4'],
   [68, 'deckB.echoOut'], [69, 'deckB.delay'], [70, 'deckB.delayFrac'], [71, 'deckB.reverb'],
-  // group D — deck B setters + loops
-  [72, 'deckB.setHotcue1'], [73, 'deckB.setHotcue2'], [74, 'deckB.setHotcue3'], [75, 'deckB.setHotcue4'],
-  [76, 'deckB.cueMix'], [77, 'deckB.keylock'],
-  [78, 'deckB.loop1'], [79, 'deckB.loop2'], [80, 'deckB.loop4'], [81, 'deckB.loop8'],
-  [82, 'deckB.loopExit'], [83, 'deckB.loopLatch']
+  // group D — velocity-sensitive Harvested DNA Sampler Pads 1–8 + Deck B loops!
+  [72, 'sampler.pad1'], [73, 'sampler.pad2'], [74, 'sampler.pad3'], [75, 'sampler.pad4'],
+  [76, 'sampler.pad5'], [77, 'sampler.pad6'], [78, 'sampler.pad7'], [79, 'sampler.pad8'],
+  [80, 'deckB.loop1'], [81, 'deckB.loop2'], [82, 'deckB.loop4'], [83, 'deckB.loop8']
 ]
 
 function ko2Preset(): Record<string, MidiBinding> {
@@ -2183,7 +2397,7 @@ function ko2Preset(): Record<string, MidiBinding> {
 
 refs.midiKo2.addEventListener('click', () => {
   midi.applyPreset(ko2Preset(), ['fader.control', 'mix.master'])
-  log('loaded K.O. II pad preset (groups A/C = deck controls, B/D = hot cue setters; BPM left unmapped). use SET FADER above to route the bottom-left fader to Master Vol, Crossfader, Filter, or BPM anytime')
+  log('loaded K.O. II preset (Groups A/C = Decks A/B, Group B = Deck A loops/cues, Group D pads 1–8 = velocity Sampler Pads!; BPM left unmapped)')
 })
 
 const WIZARD_ACTIONS = [

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, TouchBar } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, TouchBar } from 'electron'
 import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
 import { spawn } from 'node:child_process'
@@ -244,6 +244,27 @@ ipcMain.handle('fs:expandPaths', async (_e, paths: string[]) => {
 ipcMain.handle('fs:readAudio', async (_e, p: string) => {
   const buf = await fs.readFile(p)
   return new Uint8Array(buf)
+})
+
+/** Persist a harvested pad WAV clip inside userData/pads so it survives restarts. */
+ipcMain.handle('fs:savePadWav', async (_e, filename: string, bytes: Uint8Array) => {
+  const safe = filename.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80) || 'pad.wav'
+  const dir = path.join(app.getPath('userData'), 'pads')
+  await fs.mkdir(dir, { recursive: true })
+  const out = path.join(dir, safe.endsWith('.wav') ? safe : `${safe}.wav`)
+  await fs.writeFile(out, Buffer.from(bytes))
+  return out
+})
+
+/** Export a harvested pad WAV straight to ~/Music/bendwave/samples/ for the physical K.O. II. */
+ipcMain.handle('fs:exportSampleWav', async (_e, filename: string, bytes: Uint8Array) => {
+  const safe = filename.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80) || 'sample.wav'
+  const dir = path.join(app.getPath('music'), 'bendwave', 'samples')
+  await fs.mkdir(dir, { recursive: true })
+  const out = path.join(dir, safe.endsWith('.wav') ? safe : `${safe}.wav`)
+  await fs.writeFile(out, Buffer.from(bytes))
+  shell.showItemInFolder(out)
+  return out
 })
 
 ipcMain.handle('crate:load', async () => {

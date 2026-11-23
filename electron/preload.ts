@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld('vibedeck', {
   selectAudio: () => ipcRenderer.invoke('dialog:selectAudio') as Promise<string[]>,
   expandPaths: (paths: string[]) => ipcRenderer.invoke('fs:expandPaths', paths) as Promise<string[]>,
   readAudio: (p: string) => ipcRenderer.invoke('fs:readAudio', p) as Promise<Uint8Array>,
+  savePadWav: (filename: string, bytes: Uint8Array) =>
+    ipcRenderer.invoke('fs:savePadWav', filename, bytes) as Promise<string>,
+  exportSampleWav: (filename: string, bytes: Uint8Array) =>
+    ipcRenderer.invoke('fs:exportSampleWav', filename, bytes) as Promise<string>,
   filePathFor: (f: File) => webUtils.getPathForFile(f),
   crateLoad: () => ipcRenderer.invoke('crate:load'),
   crateSave: (data: unknown) => ipcRenderer.invoke('crate:save', data) as Promise<boolean>,
