@@ -1,249 +1,164 @@
+<div align="center">
+
 # bendwave
 
-**→ Zero-to-mixing guide: [QUICKSTART.md](QUICKSTART.md)** — run the app, wire the
-K.O. II + headphones rig, first mix in 60 seconds.
+**A Teenage Engineering & Boeing 737 cockpit-inspired, stem-aware two-deck DJ instrument.**
 
-A Teenage Engineering & Boeing 737 cockpit-inspired, stem-aware two-deck DJ instrument.
-Pure deterministic local DSP (no cloud latency): deep acoustic fingerprinting, graph-theoretic
-set path planning, live automated transition curves with touch-to-override, native macOS
-Touch Bar DJ strip, and class-compliant USB MIDI control (EP–133 K.O. II preset + assignable
-fader strip).
+Pure deterministic local DSP — acoustic fingerprinting, graph-theoretic set path planning, live automated transition curves with touch-to-override, and a live MIR stem-to-pad sampler. Zero cloud latency.
 
-## What works today (v1.5)
+![version](https://img.shields.io/badge/version-1.6.1-f05a24?style=flat-square)
+![platform](https://img.shields.io/badge/macOS-Apple%20Silicon-0f0e12?style=flat-square)
+![stack](https://img.shields.io/badge/Electron%2035-TypeScript%20%2B%20Web%20Audio-0071bb?style=flat-square)
+![stems](https://img.shields.io/badge/4--Stems-Demucs%20%2B%20MPS-7c3aed?style=flat-square)
+![stretch](https://img.shields.io/badge/Key%20Lock-Signalsmith%20WASM-006837?style=flat-square)
 
-- **Deep Acoustic Fingerprint & Graph Set Path Planner (`((SET PLAN))`)**: 60 ms pure-TS DSP
-  extracts 13-dim MFCC timbre, peak sub frequency (`43Hz 808` vs `54Hz SUB`), 16-step low-end
-  groove (`4OTF` / `TRAP/HALF` / `SYNCOPATED`), swing, loudness-normalized energy, and
-  energy-gated `∅` drum intros/outros. Solves no-repeat set arcs (`ARC`, `CLIMB`, `2-PEAK`)
-  via Beam Search + 2-opt with crate clusters and `BRG` bridge tracks.
-- **Live Automated Transition Curves (`((CO-PILOT))`)**: 6 executable curve strategies
-  (`BASS SWAP`, `HPF + ECHO`, `LPF IN`, `X-FILTER`, `STEM ∅`, `STEM BLEND`) with live
-  visual envelopes and instant touch-to-override on any knob, fader, MIDI CC, or Touch Bar.
-- **Boeing 737 Cockpit Rotary Knobs & 13" Smart Overlays**: 3 shape-coded SVG rotary knob
-  archetypes (`EFIS 4-Lobe`, `Overhead Wedge`, `EFIS 8-Scallop`) with center detents,
-  proportional MacBook Force Touch trackpad gliding, right-click EQ isolator kill switches,
-  and a native macOS Touch Bar live tuning strip (`DECK A/B`, `LO/FLT/VOL/MID/HI/XF`,
-  `0` snap, `KILL`).
-- **Instant Arrangement & Phrase Countdown**: bar-synchronous song structure analyzer
-  renders a color-coded Arrangement Ribbon (`INTRO`, `GROOVE`, `BREAK`, `BUILD`, `DROP`,
-  `OUTRO`, plus `♪` vocal badges once stems finish) directly above the overview strip (click
-  any block to jump), floats a live **`BUILD → DROP in 2.3`** pill cleanly over the waveform,
-  and powers one-click **`AUTO CUES`** (Hot Cues 1–4).
-- **Instant Serato / ID3 Tag Reader + Recursive Folder Drop**: reads embedded `Serato BeatGrid`
-  (exact downbeat + BPM), `TBPM`, and `TKEY` right at drop time — drag an entire folder straight
-  from Finder.
-  and supports fast batch crate drops (e.g. dropping 25+ MP3s at once populates the crate
-  and Co-Pilot in seconds, with a 1-at-a-time Demucs stem queue).
-- **Timing & Harmony HUD**: top-of-deck readout shows live BPM, original track BPM (`ORIG`),
-  clickable pitch delta, harmonic-wheel color-coded Camelot key + full musical key name,
-  and **KEY LOCK** + **SYNC** + **🎧 CUE** right alongside them, plus live `BAR.BEAT`,
-  elapsed, and remaining time.
-- **Dual waveforms (overview + close-up)**:
-  - **Zoom-out Full-Track Overview**: entire song unsegmented with alternating phrase blocks,
-    bar-number ruler (`B1`, `9`, `17`…), hover bar/time inspector to count intro lengths,
-    close-up viewport bracket, cue flags, and click/drag jump.
-  - **Close-up Scrolling Waveform**: switches between **4-STEMS** (separated Drums / Bass /
-    Other / Vocals lanes, color-matched to the stem faders and dimming live when muted),
-    **3-BAND** (separated Low / Mid / High frequency lanes on any track), and **RGB**
-    (Serato-style frequency-colored unified view).
-- **Measure & beatgrid controls**: `SET 1` anchors Bar 1 Beat 1 at the playhead, `◀1`/`1▶`
-  shifts the downbeat by a beat, `-ms`/`+ms` nudges ±10ms, `½×`/`2×` halves/doubles BPM,
-  plus configurable measure length (`4/4`, `3/4`, `2/4`, `6/4`, `8/4`) and overview phrase
-  block size (`4B`/`8B`/`16B`). Edits persist in the crate.
-- **Two decks + mixer**: play/pause, CDJ-style cue (hold to preview, release to return),
-  set-cue, pitch fader (±8%, double-click resets), pitch bend, 3-band EQ per deck,
-  equal-power crossfader, master.
-- **Color-coded cues & stems**: richly color-coded hot cues 1–4 (with bar/time labels on set
-  pads and flag pills on both waveforms), gold main CUE, purple loops, teal beat jumps, and
-  per-stem click-to-mute / shift-click-to-solo badges.
-- **Sync with drift lock**: SYNC matches tempo + phase, then a soft PLL keeps the slave
-  locked to the master while both play. SYNC again (or any manual pitch/scrub) releases.
-- **Key lock (experimental)**: WSOLA time-stretcher in an AudioWorklet — change tempo,
-  keep pitch. Full-mix decks only (not with stems); ~70ms lookahead; honest at small
-  pitch ranges, warbly at extremes.
-- **Loops & loop rolls**: 1/2/4/8-beat loops quantized to the beatgrid. Default mode is
-  momentary rolls (hold the pad, the loop plays while the virtual position keeps advancing —
-  release and you land where the track would have been, the classic roll transition).
-  LATCH mode turns the pads into toggling auto-loops. Active loops render as a shaded region
-  on the waveform. Works with stems; with key lock the worklet loops internally.
-- **FX rack per deck**: DJ filter (LP/HP combo knob, double-click to reset), beat-synced
-  delay with wet/feedback controls and switchable fraction (1/4, 1/2, 3/4, 1/1), reverb,
-  and a momentary **echo out** (`G`/`H` — hold for the transition, release to let it ring).
-- **Channel volume faders + input trim** per deck (post-FX volume, pre-EQ ±12dB trim).
-- **One-shot sampler**: 8 slots in the mixer column — drop kicks/claps/tones onto the pads,
-  trigger with click, `Shift+1…8`, or velocity-sensitive MIDI pads (K.O. II). Retrigger
-  chokes the previous hit per slot, slots persist across restarts, dedicated SMP volume,
-  and the bus runs straight to master (crossfader-bypassed, SP-6 style).
-- **Mix recording**: REC button / `V` records the master bus to a streaming 16-bit WAV in
-  `~/Music/vibedeck/` — chunks hit disk as they're produced, so an hour-long set costs no
-  RAM. Blocked (by SoundCloud terms) while streamed tracks are loaded.
-- **Beat jump**: grid-quantized ± jumps with a cycled size (1/2/4/8/16 beats) —
-  `[` / `]` on the focused deck, `\` to change size, or pads via `deckX.jumpBack/jumpFwd/jumpSize`.
-- **Crate search + sort**: live filter (name/key/BPM) and sort by name, BPM, Camelot key,
-  or recently analyzed.
-- **Memory**: stemmed decks now drop their redundant main-mix buffer (~106 MB freed per
-  5-min track) on top of the budget manager, LRU eviction, mip-pyramids and header meter
-  from earlier tiers — [docs/memory.md](docs/memory.md).
-- **Auto-gain**: tracks are loudness-analyzed on load (gated block-RMS, LUFS-approximate)
-  and the channel trim is set to normalize them to −14 LUFS, clamped to the ±12 dB trim
-  range. Persisted per track in the crate. Toggle: AUTO GAIN button or `C`; moving TRM
-  after load overrides for that track.
-- **Split-cue headphone monitoring**: per-deck CUE buttons + SPLIT CUE mode routes master
-  on channels 1/2 and the cue bus on 3/4 — pair with a macOS Aggregate Device
-  (speakers + headphones) to pre-listen like a real mixer.
-- **K.O. II preset**: documented pad map (groups A–D, notes 36–83) loaded with one click,
-  plus an auto-map wizard for faders/knobs — see [docs/ko2-mapping.md](docs/ko2-mapping.md).
-- **Memory architecture**: decoded-audio budget manager (1.25 GB default) with LRU
-  eviction for stream caches, peak mip-pyramids so waveform redraw is O(pixels) at any
-  zoom, and a live `AUDIO used/budget` meter in the header. Full design — including the
-  int16 sample-store and windowed file-paging tiers — in [docs/memory.md](docs/memory.md).
-- **Off-the-shelf DSP core**: key lock now runs on **Signalsmith Stretch** (MIT, official
-  WASM/AudioWorklet build) — the same node's streaming API is the foundation for the
-  memory tiers above. The hand-rolled WSOLA worklet remains as automatic fallback.
-- **Drop-and-play**: drag WAV/FLAC/MP3/AIFF/M4A anywhere, or use "add tracks…".
-- **Instant BPM**: an in-browser onset/autocorrelation beatgrid estimator runs the moment a
-  track loads — no dependencies required.
-- **Stems (optional)**: with `demucs` + `librosa` installed, each new track is re-analyzed by
-  the python sidecar: better BPM + offset, musical key (Camelot), and 4 separated stems
-  (drums / bass / other / vocals). Stems load onto the deck as sample-aligned layers with
-  per-stem faders.
-- **Keyboard control** (see map below).
-- **MIDI learn + watch**: click *learn* next to any action, then touch a pad/knob/fader.
-  **Watch mode** logs every incoming MIDI message — the way to discover what the K.O. II's
-  assignable fader and X/Y knobs actually transmit. Bindings persist. Continuous params
-  (tempo, 3-band EQ, filter, trim, volume, delay wet/fb, crossfader, sampler volume) take
-  absolute CC; everything else is a momentary pad.
-- **Crate**: tracks, BPM, key, cue points, hot cues and stem status persist in
-  `~/Library/Application Support/vibedeck/crate.json`.
-- **Streaming-ready**: SoundCloud integration built in — OAuth 2.1 + PKCE login, search,
-  streaming, decode to in-memory AudioBuffer, beatgrid + sync + waveform + cues all work on
-  streamed tracks. Stems are intentionally disabled on streamed content (their API terms
-  forbid it — the code enforces `stemsAllowed: false`). Setup:
-  [docs/streaming.md](docs/streaming.md).
+<br />
 
-## Quickstart
+<img src="docs/assets/bendwave-putty.png" alt="bendwave Putty Day Mode — Dual 4-Stem Decks, Boeing 737 Cockpit Knobs, Harvested DNA Sampler & Co-Pilot Automated Transitions" width="100%" />
 
-```bash
-npm install
-npm run dev        # vite + electron with hot reload on the renderer
-```
+</div>
 
-Wiring up speakers/headphones (including a $0 split-cue rig using the K.O. II as your
-audio interface): [docs/hardware.md](docs/hardware.md).
+---
 
-For the full ingestion pipeline (better BPM, key detection, stems):
+## Philosophy: Co-Pilot, Not Autopilot
 
-```bash
-pip install librosa soundfile
-pip install demucs   # optional, pulls torch — needed for stems
-```
+Most DJ tools either dump raw waveforms in your lap or lock you into rigid automation. **bendwave** is built as a tactile, selector-first instrument:
 
-Without these, vibedeck still works: browser-side BPM estimation covers beatmatching and sync.
+- **Deterministic local math, never black-box latency:** Every beatgrid, arrangement ribbon, acoustic fingerprint, set path, and transition curve runs locally in milliseconds on raw PCM audio — works 100% offline on any track you drop in.
+- **Instant touch-to-override:** Run an 8-bar automated bass swap or stem vocal blend, watch the Boeing 737 dials rotate live, and grab *any* knob, fader, MIDI control, or Touch Bar slider mid-transition to immediately take manual control.
+- **Instrument, not a DAW:** Harvest wet kicks, 808s, UKG wobbles, synth chords, and vocal chops straight out of the records you're spinning and carry them across your set as tempo-warped, Camelot key-locked callbacks.
 
-## Keyboard map
+<details>
+<summary><strong>Preview Dark Booth Mode &amp; Graph Set Path Planner</strong></summary>
+<br />
+<img src="docs/assets/bendwave-dark.png" alt="bendwave Dark Booth Mode — Matte Carbon Boeing Knobs & Graph-Theoretic Set Path Planner" width="100%" />
+</details>
 
-| Key | Action | | Key | Action |
-|---|---|---|---|---|
-| `Q` | Deck A play/pause | | `P` | Deck B play/pause |
-| `W` | Deck A cue (hold) | | `O` | Deck B cue (hold) |
-| `E` | Deck A set cue | | `I` | Deck B set cue |
-| `R` | Deck A sync (toggle lock) | | `U` | Deck B sync (toggle lock) |
-| `1` / `2` | Deck A bend −/+ | | `9` / `0` | Deck B bend −/+ |
-| `3` | Deck A key lock | | `8` | Deck B key lock |
-| `A` `S` `D` `F` | Deck A hot cues 1–4 | | `J` `K` `L` `;` | Deck B hot cues 1–4 |
-| `Shift` + hotcue key | Set that hot cue | | `,` / `.` | Crossfader left/right |
-| `G` / `H` | Deck A/B echo out (hold) | | `Space` | Crossfader center |
-| `Z` / `/` | Deck A/B headphone cue | | `X` | Split cue on/off |
-| `4`–`7` | Deck A loop rolls 1/2/4/8 | | `B` `N` `M` `'` | Deck B loop rolls 1/2/4/8 |
-| `T` / `Y` | Deck A/B loop latch mode | | `Shift`+`1`–`8` | Sampler pads |
-| `[` / `]` | Beat jump back/fwd (focused deck) | | `\` | Cycle jump size |
-| `V` | Record mix to WAV | | wheel on waveform | zoom in/out |
+---
 
-## Packaging
+## What's Inside (`v1.6`)
 
-```bash
-npm run dist        # → release/vibedeck-<version>-arm64.dmg
-```
+| Pillar | Capability | Highlights |
+| :--- | :--- | :--- |
+| **Dual Decks & Stems** | Two sample-aligned Web Audio decks + 4-stem Demucs separation (`DRM / BAS / OTH / VOX`) | Instant Serato BeatGrid / `TBPM` / `TKEY` ID3 reader, recursive folder drag-and-drop, 3-band EQ, LP/HP filter, beat-synced delay (`♬ 1/4` · `♪ 1/2` · `♪· 3/4` · `♩ 1/1`), reverb, momentary Echo Out, `-14 LUFS` Auto-Gain, Split-Cue, streaming WAV recorder (`~/Music/bendwave/`), Signalsmith Stretch WASM Key Lock. |
+| **Arrangement & Waveforms** | Dual theme-aware canvases (`RGB` · `3-BAND` · `4-STEMS`) + Arrangement Ribbon | Bar-synchronous `INTRO / BUILD / DROP / BREAK / GROOVE / OUTRO` detection + `♪` vocal badges once stems finish, floating phrase countdown pill (`DROP → BUILD in 48.1`), 1-click `AUTO CUES`, collapsible `GRID ▾` popover (`⚑ 1`, `◀1/1▶`, `±10ms`, `½×/2×`, `4/4`, `8B`). |
+| **Deep Acoustic Fingerprint** | ~60 ms pure TypeScript DSP per track | 13-dim MFCC timbre vector, peak sub frequency (`35Hz 808` vs `59Hz SUB`), sub sustain, 16-step low-end groove (`4OTF` / `TRAP/HALF` / `SYNCOPATED`), downbeat-aligned 16th-note swing, stereo width, loudness-normalized `danceEnergy`, and energy-gated `∅` drum-only intro/outro scores. |
+| **Graph Set Path Planner** | `((SET PLAN))` tab — ~6 ms Beam Search + 2-opt solver | Strictly no-repeat set arcs (`ARC`, `CLIMB`, `2-PEAK`) over directed crate edges (log-tempo + half/double wrap, Camelot + natural/stem `∅` reset, z-scored MFCC cosine distance, swing & groove match), crate clusters, `BRG` bridge tracks, `GENRE BRK`, and `ALT` path exploration. |
+| **Automated Transitions** | `((CO-PILOT))` tab — 6 live executable curve strategies | Auto-selects `BASS SWAP`, `HPF + ECHO`, `LPF IN`, `X-FILTER`, `STEM ∅` (4-beat drums-only loop to bridge key clashes), or `STEM BLEND` (strips clashing `VOX`, swaps `BAS+DRM` on bar 5), with Spotify-Mix-style visual envelope preview and live touch-to-override. |
+| **Harvested DNA Sampler** | MIR Stem-to-Pad Harvester (`HARVEST`, `⇧+drag`, `⌥-click` stem) | 12-bin Chromagram Self-Similarity hooks, Spectral Tonality + Chroma Novelty `OTH` synth riffs & chord stabs, cosine-diverse `VOX` chops (never duplicate choruses), isolated `DRM` / `808` onset hits, **0 ms attack** leading-silence & STFT latency trim, `★ Pin` + `HARVEST` Re-Roll, live Signalsmith BPM warp + Camelot key-lock with vocal formant preservation, beat-synced Space FX, and 1-click `.wav` export for the physical K.O. II. |
+| **Hardware & Tactile UI** | Putty Day & Dark Booth modes · 13" MacBook Pro ready | 3 original Boeing 737 SVG rotary knob archetypes (`EFIS 4-Lobe`, `Overhead Wedge`, `EFIS 8-Scallop`), proportional Force Touch trackpad gliding, right-click EQ isolator kill switches, native macOS Touch Bar live DJ strip, integrated frameless macOS titlebar, custom hardware hover placards, and class-compliant USB MIDI (`EP–133 K.O. II` preset + 1-click assignable `SET FADER →` strip + Pitch Bend). |
 
-The DMG is unsigned (Gatekeeper will ask: right-click → Open the first time). The python
-sidecar script is bundled via `extraResources`; the heavy python deps are **not** in the
-DMG (demucs + torch ≈ 2 GB) — the app bootstraps a private venv on demand:
-
-- "install analysis env" (header button): librosa + soundfile → better BPM/key
-- "+ stems": adds demucs + torch (~2 GB, one time), pip output streams to the log panel
-
-Everything lands in `~/Library/Application Support/vibedeck/pyenv/` and the sidecar always
-prefers it. Without any of it, the app still works — browser-side BPM covers beatmatch/sync.
-
-### Signing (when you want to distribute to other Macs)
-
-For personal use on your own machine: nothing needed — right-click → Open once.
-
-To distribute: **Apple Developer Program, $99/yr**. Then in `package.json` `build.mac`:
-
-```json
-"identity": "Developer ID Application: Your Name (TEAMID)",
-"notarize": { "teamId": "TEAMID" }
-```
-
-with `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` (appleid.apple.com → sign-in & security →
-app-specific password) and `APPLE_TEAM_ID` in the environment. electron-builder then
-signs with the hardened runtime + entitlements (already staged in
-`build/entitlements.mac.plist`), notarizes, and staples the ticket — the DMG opens
-cleanly on anyone's Mac. A free Apple ID can't issue Developer ID certs, so there is no
-$0 path for outside-the-App-Store distribution.
+---
 
 ## Architecture
 
-ASCII diagrams of the signal path, memory tiers, and control plane live in
-[docs/architecture.md](docs/architecture.md).
-
+```text
+  Local Folder / Audio / SoundCloud Stream
+         │
+         ├──► Instant TS DSP (~60ms/track, offline)
+         │      ├─ id3.ts          Serato BeatGrid, TBPM, TKEY tags
+         │      ├─ analysis.ts     BeatGrid fallback, LUFS Auto-Gain
+         │      ├─ structure.ts    INTRO / BUILD / DROP / BREAK / OUTRO + AUTO CUES
+         │      └─ fingerprint.ts  13-dim MFCC, peakSubHz, 16-step groove, swing, ∅ nodes
+         │
+         ├──► Background Python Sidecar (Apple Silicon MPS, private venv)
+         │      └─ tools/analyze.py  librosa key + Demucs 4-stems (DRM / BAS / OTH / VOX)
+         │
+         ├──► Intelligence & Performance Engine (src/renderer/engine/)
+         │      ├─ planner.ts      Directed Crate Graph → Beam Search + 2-opt Set Paths
+         │      ├─ copilot.ts      Top-5 Next Up + Transition Recipe + [!] VOX CLASH
+         │      ├─ transition.ts   6 live curve envelopes + instant touch-to-override
+         │      ├─ harvester.ts    Chroma SSM + Tonality + Cosine Diversity + 0ms trim
+         │      └─ sampler.ts      8-pad DNA sampler + offline Signalsmith warp/key-lock
+         │
+         └──► Native C++ Real-Time Audio Graph (Web Audio API + Signalsmith WASM)
+                └─ Deck A / Deck B ─► 3-Band EQ ─► LP/HP + Delay/Reverb/Echo ─► Crossfader ─► Master / Split-Cue / WAV Rec
 ```
-electron/main.ts            window, IPC: file dialog, audio reads, crate JSON, sidecar spawn
-electron/preload.ts         contextBridge (incl. webUtils path for drag & drop)
-src/renderer/
-  engine/deck.ts            deck: sources, position math, rate/bend, cue, sync, stem layers
-  engine/engine.ts          audio context, master, mixer (equal-power crossfade)
-  engine/analysis.ts        browser beatgrid: RMS onset envelope → autocorrelation → phase fit
-  crate/store.ts            crate persistence (JSON via IPC, debounced)
-  midi/midi.ts              Web MIDI learn router (bindings in localStorage)
-  ui.ts, style.css          vanilla DOM UI
-tools/analyze.py            sidecar: librosa (bpm/offset/key/camelot) + demucs (4 stems)
+
+---
+
+## Quick Start
+
+### Run from Source (macOS Apple Silicon)
+
+```bash
+git clone https://github.com/vidyut-19/bendwave.git
+cd bendwave
+npm install
+npm run dev
 ```
 
-Design notes:
+### Build Packaged macOS `.app` & `.dmg`
 
-- **Position math**: `position = startPos + (ctx.currentTime − startedAt) × effRate`. Rate
-  changes rebase the anchor and push `playbackRate` onto live sources, so tempo changes never
-  glitch or restart playback.
-- **Sync** = tempo lock (`rate = masterEffBpm / trackBpm`) + phase alignment (grid phase
-  matched to the master's current beat phase, seeking to the nearest beat) + an ongoing
-  drift lock (proportional phase correction, ±3% clamp, 5Hz update) while both decks play.
-- **Key lock** = `keylock-worklet.js`, a WSOLA-style granular time-stretcher in an
-  AudioWorklet (Hann-windowed overlap-add + cross-correlation grain alignment). Audio runs
-  ~70ms ahead of the position math; the worklet reports its true audible position back to
-  the deck to keep the numbers honest. Falls back to plain resampling if worklets fail.
-- **Stems are precomputed, not real-time**: separation runs once at ingestion; the deck then
-  plays 4 sample-aligned buffers with gain nodes. The live path does zero ML, so sync/latency
-  behave exactly like a normal track. Key lock is unavailable while stems are loaded.
-- Stem WAVs land in `~/Library/Application Support/vibedeck/stems/<id>/…`.
-- **Streaming**: `src/renderer/sources/provider.ts` defines the seam; research on
-  SoundCloud/Spotify/TIDAL/YouTube lives in [docs/streaming.md](docs/streaming.md).
+```bash
+npm run typecheck
+npm run dist
+# Output: release/bendwave-1.6.0-arm64.dmg (ad-hoc signed via scripts/adhoc-sign.cjs)
+```
 
-## Roadmap
+> **Note when sharing the unsigned DMG between Macs:** After dragging `bendwave.app` into `/Applications`, clear AirDrop's quarantine flag once with `xattr -cr /Applications/bendwave.app`.
 
-Full connected roadmap across all 5 pillars (Deep Acoustic Fingerprint → Set Path Planner
-→ Intelligent Transition Engine → Automated Transition Curves → Hardware & Core Polish):
-**[ROADMAP.md](ROADMAP.md)**.
+### Optional: Enable 4-Stem Separation (Demucs + Apple Silicon MPS)
 
-## Study material / credits
+The DMG stays lightweight (~101 MB) by keeping Python/PyTorch out of the bundle. To unlock 4-stem separation and `librosa` key detection:
 
-- [Mixxx](https://mixxx.org) — open-source DJ engine; read it for beatgrids, sync, keylock
-- [Demucs](https://github.com/adefossez/demucs) — stem separation
-- [librosa](https://librosa.org) — tempo/key analysis
-- [aubio](https://aubio.org) — fast onset/tempo detection (C, WASM builds exist)
+1. Ensure Python 3.12 + `ffmpeg` are installed (`brew install python@3.12 ffmpeg`).
+2. Click **`+ STEMS`** in `bendwave`'s top header once — it builds an isolated private venv in `~/Library/Application Support/bendwave/pyenv` automatically.
 
-## Legal note
+---
 
-Stem separation and beatgrids for personal performance use are fine. Distributing separated
-acapellas or remixes of copyrighted tracks is a rights issue — yours, not the code's.
+## Controls & Hardware Rig
+
+### Laptop / Trackpad (Zero External Controller Needed)
+
+| Gesture / Control | Action |
+| :--- | :--- |
+| **Hover Boeing Knob + 2-finger glide** | Analog-smooth proportional tuning (hold `Shift` for 4× fine precision) |
+| **Double-click any knob / fader** | Snap to detent (`0.0 dB` / `FLAT` / `CENTER` / `0%`) |
+| **Right-click `LO` / `MID` / `HI` knob** | Instant DJM-style **Isolator Kill** toggle (`-26 dB ↔ 0.0 dB`) |
+| **Hover Crossfader / Pitch + 2-finger swipe** | Smooth crossfade or tempo ride |
+| **`⇧ + Drag` on `STEMS` waveform** | Harvest any exact beat/bar slice off a specific stem lane onto a pad |
+| **`⌥ + Click` `DRM/BAS/OTH/VOX` pill** | Grab live playhead beat/bar onto next open pad |
+| **`⌘ + Click` any Sampler Pad** | **`★ Pin`** pad so it stays locked while clicking `HARVEST` to re-roll |
+| **Right-click any Sampler Pad** | Toggle `ONE-SHOT / SYNC LOOP`, `KEY LOCK`, `SPACE FX`, or **`EXPORT .WAV (K.O. II)`** |
+
+### Native macOS Touch Bar (2020 M1 MacBook Pro)
+
+```text
+[ DECK A/B ]  [ LO | FLT | VOL | MID | HI | XF ]  [ ━━━ CONTINUOUS OLED SLIDER ━━━ ]  [ 0 ]  [ KILL ]
+```
+
+### Keyboard Shortcuts
+
+| Keys | Deck A | Deck B | Mixer / Global |
+| :--- | :--- | :--- | :--- |
+| **Play / Cue / Set / Sync** | `Q` / `W` / `E` / `R` | `P` / `O` / `I` / `U` | `,` / `.` / `Space` Crossfader |
+| **Hot Cues 1–4** (`⇧` sets) | `A` `S` `D` `F` | `J` `K` `L` `;` | `X` Split Cue · `C` Auto-Gain · `V` Record |
+| **Loop Rolls 1/2/4/8** / Latch | `4` `5` `6` `7` / `T` | `B` `N` `M` `'` / `Y` | `[` `]` Beat Jump · `\` Jump Size |
+| **Echo Out / Headphone PFL** | `G` / `Z` | `H` / `/` | `⇧ + 1–8` Trigger Sampler Pads 1–8 |
+| **Pitch Bend / Key Lock** | `1` `2` / `3` | `9` `0` / `8` | `Esc` Close Popovers / Overlays |
+
+### USB MIDI & EP–133 K.O. II
+
+Click **`K.O. II PRESET`** in `((MIDI))` for instant 4-group mapping (leaving BPM unmapped):
+- **Group A** (`36–47`): Deck A Play, Cue, Set, Sync, Hot Cues 1–4, Echo Out, Delay, Frac, Reverb
+- **Group B** (`48–59`): Deck A Hot Cue setters, PFL, Key Lock, Loop Rolls `1/2/4/8`, Exit, Latch
+- **Group C** (`60–71`): Deck B Play, Cue, Set, Sync, Hot Cues 1–4, Echo Out, Delay, Frac, Reverb
+- **Group D** (`72–83`): **Velocity-sensitive Harvested DNA Sampler Pads 1–8** (`72–79`) + Deck B Loops `1/2/4/8` (`80–83`)
+- **`SET FADER →` strip:** Bind your K.O. II bottom-left fader once (CC or Pitch Bend), then flip its target live between **Master Volume**, **Crossfader**, **Active Deck Vol/BPM/Filter/Low EQ**, or **Sampler Vol**.
+
+---
+
+## Docs & Further Reading
+
+- **[QUICKSTART.md](QUICKSTART.md)** — 60-second setup for K.O. II + headphones + Split-Cue
+- **[ROADMAP.md](ROADMAP.md)** — Full 5+1 Pillar engineering blueprint
+- **[docs/vibedeck-ko2-manual.pdf](docs/vibedeck-ko2-manual.pdf)** — 2-page printable TE-style K.O. II field manual
+- **[docs/vibedeck-session-notes.pdf](docs/vibedeck-session-notes.pdf)** — 4-page e-reader field essay & architecture notes
+- **[docs/streaming.md](docs/streaming.md)** — Optional SoundCloud OAuth setup
+
+---
+
+## License & Acknowledgments
+
+MIT License. Built on open-source giants: [Electron](https://www.electronjs.org/), [Vite](https://vite.dev/), [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/), [Demucs](https://github.com/facebookresearch/demucs), [librosa](https://librosa.org/), [PyTorch](https://pytorch.org/), and [Geist Mono](https://vercel.com/font). Industrial design inspired by Braun, Teenage Engineering, and the Boeing 737 flight deck (independent project; not affiliated with or endorsed by those brands).
