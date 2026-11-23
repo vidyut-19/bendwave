@@ -7,6 +7,7 @@ import { STEM_ORDER, type Deck, type Track } from './engine/deck'
 import { CrateStore } from './crate/store'
 import { MidiRouter } from './midi/midi'
 import { buildApp, ICO_PLAY, ICO_PAUSE, type AppRefs, type DeckRefs } from './ui'
+import { initCustomTooltips } from './tooltip'
 import { SoundCloudProvider } from './sources/soundcloud'
 import { registerProvider, type StreamTrackRef } from './sources/provider'
 import { delayFracLabel } from './engine/fx'
@@ -2157,7 +2158,11 @@ function tickBody(): void {
       btn.classList.toggle('set', hc != null)
       const timeEl = btn.querySelector('.hc-time')
       if (timeEl) timeEl.textContent = hc != null ? barLabelAt(deck, hc) : '—'
-      btn.title = hc != null ? `Hot Cue ${i + 1} @ ${fmtTime(hc)} (${barLabelAt(deck, hc)}) · ⇧set · ⌥clear` : `Hot Cue ${i + 1} empty · ⇧click to set`
+      const hcTip =
+        hc != null
+          ? `Hot Cue ${i + 1} @ ${fmtTime(hc)} (${barLabelAt(deck, hc)}) · ⇧set · ⌥clear`
+          : `Hot Cue ${i + 1} empty · ⇧click to set`
+      if (btn.dataset.tip !== hcTip) btn.dataset.tip = hcTip
     }
     const eq = deck.eqDb
     if (!r.eqLow.dragging) r.eqLow.setValue(eq.low)
@@ -2949,6 +2954,7 @@ window.vibedeck?.onEnvLog((line) => log(`py: ${line}`))
 
 wireDeck(engine.deckA, refs.deckA)
 wireDeck(engine.deckB, refs.deckB)
+initCustomTooltips()
 for (const deck of [engine.deckA, engine.deckB]) {
   deck.onEnded = () => log(`deck ${deck.id} track ended`)
   deck.onKeylockError = (m) =>

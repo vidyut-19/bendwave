@@ -133,6 +133,8 @@ function createWindow(): void {
     minHeight: 700,
     backgroundColor: '#090b0f',
     title: 'bendwave',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 14, y: 12 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

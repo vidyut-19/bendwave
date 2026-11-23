@@ -507,7 +507,6 @@ export function buildApp(root: HTMLElement): AppRefs {
   addBtn.title = 'Add audio files or an entire folder to your crate'
   header.innerHTML = `
     <div class="brand">
-      <span class="brand-tag">EP–133</span>
       <h1>bendwave</h1>
       <span class="brand-ver">v1.6</span>
     </div>
