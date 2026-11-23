@@ -1,4 +1,4 @@
-import { camelotSemitoneDelta, foldedTempoRatio, type PadStemKind } from './harvester'
+import { camelotSemitoneDelta, foldedTempoRatio, trimLeadingSilence, type PadStemKind } from './harvester'
 
 /**
  * 8-slot "Harvested DNA" Sampler (Pillar 6)
@@ -25,6 +25,8 @@ export interface PadMeta {
   keyLock: boolean
   bpmSync: boolean
   fxSend: boolean
+  /** Pinned pads (★) survive HARVEST re-rolls untouched (Serato Sample Favorite workflow) */
+  pinned?: boolean
 }
 
 export interface PadInfo extends PadMeta {
@@ -116,6 +118,7 @@ export class Sampler {
         keyLock: false,
         bpmSync: false,
         fxSend: false,
+        pinned: false,
         rawBuffer: null,
         warpedBuffer: null,
         warpedSig: '',
@@ -160,6 +163,7 @@ export class Sampler {
       keyLock: s.keyLock,
       bpmSync: s.bpmSync,
       fxSend: s.fxSend,
+      pinned: !!s.pinned,
       looping: s.looping,
       rendering: s.rendering,
       semitoneShift: s.keyLock ? camelotSemitoneDelta(s.camelot, this.masterCamelot) : 0,
@@ -181,7 +185,8 @@ export class Sampler {
             mode: s.mode,
             keyLock: s.keyLock,
             bpmSync: s.bpmSync,
-            fxSend: s.fxSend
+            fxSend: s.fxSend,
+            pinned: !!s.pinned
           }
         : null
     )
@@ -208,6 +213,7 @@ export class Sampler {
     s.keyLock = meta.keyLock ?? false
     s.bpmSync = meta.bpmSync ?? !!(meta.sourceBpm && meta.sourceBpm > 0)
     s.fxSend = meta.fxSend ?? false
+    s.pinned = !!meta.pinned
     s.rawBuffer = buffer
     s.warpedBuffer = null
     s.warpedSig = ''
@@ -236,8 +242,21 @@ export class Sampler {
     s.keyLock = false
     s.bpmSync = false
     s.fxSend = false
+    s.pinned = false
     s.fxSendGain.gain.value = 0
     this.onChange?.()
+  }
+
+  isPinned(i: number): boolean {
+    return !!this.slots[i]?.pinned
+  }
+
+  togglePin(i: number): boolean | null {
+    const s = this.slots[i]
+    if (!s || !s.rawBuffer) return null
+    s.pinned = !s.pinned
+    this.onChange?.()
+    return s.pinned
   }
 
   toggleMode(i: number): 'oneshot' | 'loop' | null {
@@ -331,7 +350,8 @@ export class Sampler {
     s.rendering = true
     const raw = s.rawBuffer
     const isVocal = s.stem === 'vocals'
-    void this.renderStretched(raw, rate, semitones, isVocal)
+    const isOneShot = s.mode === 'oneshot'
+    void this.renderStretched(raw, rate, semitones, isVocal, isOneShot)
       .then((buf) => {
         if (s.renderGen !== gen) return
         s.warpedBuffer = buf
@@ -348,23 +368,31 @@ export class Sampler {
       })
   }
 
-  /** Offline Signalsmith Stretch render (~15–25ms for a 1–2 bar pad) → zero-latency playback! */
+  /**
+   * Offline Signalsmith Stretch render (~15–25ms for a 1–2 bar pad) with
+   * exact STFT latency compensation + leading-silence trim so pads hit at 0ms!
+   */
   private async renderStretched(
     src: AudioBuffer,
     rate: number,
     semitones: number,
-    preserveFormants: boolean
+    preserveFormants: boolean,
+    trimFront: boolean
   ): Promise<AudioBuffer> {
     const sr = src.sampleRate
     const ch = src.numberOfChannels
     const outLen = Math.max(512, Math.round(src.length / rate))
-    const off = new OfflineAudioContext(ch, outLen, sr)
+    // Pad extra 140ms so STFT lookahead latency never truncates the tail
+    const padFrames = Math.ceil(0.14 * sr)
+    const off = new OfflineAudioContext(ch, outLen + padFrames, sr)
     const mod = await import('signalsmith-stretch')
     const node = await mod.SignalsmithStretch(off as unknown as AudioContext, {
       numberOfInputs: 0,
       numberOfOutputs: 1,
       outputChannelCount: [Math.max(1, ch)]
     })
+    const latFn = (node as unknown as { latency?: () => Promise<number> | number }).latency
+    const latSec = typeof latFn === 'function' ? await latFn.call(node) : 0
     const chans: Float32Array[] = []
     for (let c = 0; c < ch; c++) chans.push(src.getChannelData(c).slice())
     await node.addBuffers(chans)
@@ -377,17 +405,23 @@ export class Sampler {
       formantCompensation: preserveFormants
     })
     const rendered = await off.startRendering()
-    // Apply 3ms edge micro-fade so looped playback stays 100% seamless
-    const fade = Math.min(Math.floor(rendered.length * 0.1), Math.floor(0.003 * sr))
-    for (let c = 0; c < rendered.numberOfChannels; c++) {
-      const d = rendered.getChannelData(c)
-      for (let i = 0; i < fade; i++) {
-        const g = i / fade
-        d[i] *= g
-        d[d.length - 1 - i] *= g
+
+    // Strip SignalsmithStretch STFT lookahead latency so sample 0 aligns to beat 0!
+    const skip = Math.min(Math.max(0, rendered.length - outLen), Math.max(0, Math.round(latSec * sr)))
+    const copyLen = Math.min(outLen, rendered.length - skip)
+    const clean = this.ctx.createBuffer(ch, Math.max(256, copyLen), sr)
+    const fade = Math.min(Math.floor(clean.length * 0.1), Math.max(16, Math.floor(0.003 * sr)))
+    for (let c = 0; c < ch; c++) {
+      const inp = rendered.getChannelData(c)
+      const dst = clean.getChannelData(c)
+      for (let i = 0; i < clean.length; i++) {
+        let g = 1
+        if (i < fade) g = i / fade
+        else if (i >= clean.length - fade) g = (clean.length - 1 - i) / fade
+        dst[i] = inp[skip + i] * g
       }
     }
-    return rendered
+    return trimFront ? trimLeadingSilence(this.ctx, clean, 0.14) : clean
   }
 
   private stopSlot(s: Slot): void {
@@ -453,7 +487,8 @@ export class Sampler {
         return
       }
       this.stopSlot(s)
-      const qDelay = this.nextBeatDelaySec > 0.005 && this.nextBeatDelaySec < 0.35 ? this.nextBeatDelaySec : 0
+      // Only beat-snap loops when a beat is imminent (<90ms); otherwise start immediately under your finger!
+      const qDelay = this.nextBeatDelaySec > 0.004 && this.nextBeatDelaySec < 0.09 ? this.nextBeatDelaySec : 0
       this.startSlot(s, velocity, true, qDelay)
       this.onChange?.()
       return

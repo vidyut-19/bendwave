@@ -19,7 +19,15 @@ import { planTransition, recommendNext, type VibeMode } from './engine/copilot'
 import { planSetPath, type SetArc, type AutoStrategy } from './engine/planner'
 import { TransitionRunner, drawTransitionCurves, STRATEGY_META } from './engine/transition'
 import { Sampler, type PadMeta } from './engine/sampler'
-import { autoHarvestDeck, encodeWav16, grabStemSlice, type HarvestedClip } from './engine/harvester'
+import {
+  buildHarvestPools,
+  encodeWav16,
+  grabStemSlice,
+  selectHarvestRoll,
+  trimLeadingSilence,
+  type HarvestedClip,
+  type TrackHarvestPools
+} from './engine/harvester'
 import { Recorder } from './engine/recorder'
 import { DeckMeterView, MasterMeterView } from './engine/meter'
 import type { MidiBinding } from './midi/midi'
@@ -1390,22 +1398,46 @@ function wireDeck(deck: Deck, r: DeckRefs): void {
   })
 
   r.harvestBtn.addEventListener('click', () => {
-    if (!deck.hasAudio) {
+    if (!deck.hasAudio || !deck.track) {
       log(`deck ${deck.id}: load a track first to harvest stem gems`)
       return
     }
-    const clips = autoHarvestDeck(engine.ctx, deck)
+    const prev = harvestState[deck.id]
+    const isReRoll = !!prev && prev.trackId === deck.track.id && prev.stemCount === deck.stemCount
+    const pools = isReRoll ? prev.pools : buildHarvestPools(engine.ctx, deck)
+    const roll = isReRoll ? prev.roll + 1 : 0
+    const clips = selectHarvestRoll(pools, roll)
     if (!clips.length) {
       log(`deck ${deck.id}: nothing harvestable found`)
       return
     }
     void (async () => {
       const assigned: string[] = []
-      for (const c of clips) {
-        const slot = await storeHarvestedClip(c)
+      const usedSlots: number[] = []
+      for (let k = 0; k < clips.length; k++) {
+        const c = clips[k]
+        // On re-roll, reuse this deck's previous slot for index k UNLESS the user pinned (★) it!
+        const prevSlot = isReRoll ? prev.slots[k] : undefined
+        if (prevSlot != null && sampler.isPinned(prevSlot)) {
+          usedSlots.push(prevSlot)
+          assigned.push(`P${prevSlot + 1}:★KEPT`)
+          continue
+        }
+        const target = prevSlot != null && !sampler.info(prevSlot)?.looping ? prevSlot : pickHarvestSlot(usedSlots)
+        const slot = await storeHarvestedClip(c, target)
+        usedSlots.push(slot)
         assigned.push(`P${slot + 1}:${c.shortLabel}`)
       }
-      log(`harvested deck ${deck.id} → ${assigned.join(' · ')} (right-click any pad for loop / key-lock / K.O. II WAV export)`)
+      harvestState[deck.id] = {
+        trackId: deck.track!.id,
+        stemCount: deck.stemCount,
+        pools,
+        roll,
+        slots: usedSlots
+      }
+      log(
+        `${isReRoll ? `re-rolled #${roll + 1}` : 'harvested'} deck ${deck.id} → ${assigned.join(' · ')} (⌘-click or right-click pad to ★ pin before re-rolling)`
+      )
     })()
   })
 
@@ -1717,6 +1749,10 @@ window.vibedeck?.onTouchBarAction((ev) => {
 // ---------------------------------------------------------------------------
 
 let nextPadCursor = 0
+const harvestState: Record<
+  'A' | 'B',
+  { trackId: string; stemCount: number; pools: TrackHarvestPools; roll: number; slots: number[] } | null
+> = { A: null, B: null }
 
 function hidePadMenu(): void {
   refs.padMenu.hidden = true
@@ -1728,13 +1764,22 @@ document.addEventListener('pointerdown', (e) => {
   }
 })
 
-function pickHarvestSlot(): number {
-  const empty = sampler.firstEmptySlot()
-  if (empty >= 0) return empty
-  // Never stomp an actively looping pad when recycling slots
+function pickHarvestSlot(exclude: number[] = []): number {
+  const blocked = new Set(exclude)
+  for (let i = 0; i < sampler.count; i++) {
+    if (!sampler.isLoaded(i) && !blocked.has(i)) return i
+  }
+  // Never stomp a ★ pinned or actively looping pad when recycling slots
   for (let tries = 0; tries < sampler.count; tries++) {
     const idx = (nextPadCursor + tries) % sampler.count
-    if (!sampler.info(idx)?.looping) {
+    if (!blocked.has(idx) && !sampler.isPinned(idx) && !sampler.info(idx)?.looping) {
+      nextPadCursor = (idx + 1) % sampler.count
+      return idx
+    }
+  }
+  for (let tries = 0; tries < sampler.count; tries++) {
+    const idx = (nextPadCursor + tries) % sampler.count
+    if (!blocked.has(idx) && !sampler.isPinned(idx)) {
       nextPadCursor = (idx + 1) % sampler.count
       return idx
     }
@@ -1781,6 +1826,7 @@ function updateSamplerUI(): void {
     const info = sampler.info(i)
     pad.classList.toggle('loaded', !!info)
     pad.classList.toggle('looping', !!info?.looping)
+    pad.classList.toggle('pinned', !!info?.pinned)
     pad.classList.toggle('rendering', !!info?.rendering)
     for (const c of STEM_CLASSES) pad.classList.remove(c)
     const lblEl = pad.querySelector('.smp-lbl')
@@ -1794,7 +1840,7 @@ function updateSamplerUI(): void {
           : ''
       const bpmStr = info.sourceBpm ? ` · ${info.sourceBpm.toFixed(0)} BPM` : ''
       const keyStr = info.camelot ? ` · ${info.camelot}` : ''
-      pad.title = `${info.name}${bpmStr}${keyStr}${shiftStr} · ${info.mode === 'loop' ? 'SYNC LOOP' : 'ONE-SHOT'} · right-click options · ⌥-click clear`
+      pad.title = `${info.name}${bpmStr}${keyStr}${shiftStr} · ${info.mode === 'loop' ? 'SYNC LOOP' : 'ONE-SHOT'}${info.pinned ? ' · ★ PINNED' : ''} · ⌘-click pin · right-click options · ⌥-click clear`
     } else {
       if (lblEl) lblEl.textContent = ''
       pad.title = 'empty — drop audio, click HARVEST, ⇧+drag waveform, or ⌥-click a stem pill'
@@ -1814,11 +1860,18 @@ function openPadMenu(i: number, x: number, y: number): void {
       : ''
   m.innerHTML = `
     <div class="pad-menu-title">PAD ${i + 1} · ${escapeHtml(info.name)}</div>
+    <button class="pm-pin">${info.pinned ? '★ UNPIN (ALLOW RE-ROLL)' : '☆ PIN PAD (KEEP ON RE-ROLL)'}</button>
     <button class="pm-mode">MODE: ${info.mode === 'loop' ? 'SYNC LOOP ↻ → ONE-SHOT' : 'ONE-SHOT → SYNC LOOP ↻'}</button>
     <button class="pm-key">KEY LOCK: ${info.keyLock ? `ON${shiftTxt}` : 'OFF'}</button>
     <button class="pm-fx">SPACE FX: ${info.fxSend ? 'ON' : 'OFF'}</button>
     <button class="pm-export">EXPORT .WAV (K.O. II)</button>
     <button class="pm-clear danger">CLEAR PAD</button>`
+  m.querySelector('.pm-pin')?.addEventListener('click', () => {
+    const pinned = sampler.togglePin(i)
+    persistSampler()
+    hidePadMenu()
+    log(`pad ${i + 1} ${pinned ? '★ pinned (locked during HARVEST re-rolls)' : 'unpinned'}`)
+  })
   m.querySelector('.pm-mode')?.addEventListener('click', () => {
     const next = sampler.toggleMode(i)
     persistSampler()
@@ -1886,7 +1939,8 @@ async function restoreSampler(): Promise<void> {
           mode: r.mode ?? 'oneshot',
           keyLock: r.keyLock ?? false,
           bpmSync: r.bpmSync ?? false,
-          fxSend: r.fxSend ?? false
+          fxSend: r.fxSend ?? false,
+          pinned: !!r.pinned
         })
         audioMem.track(`smp:${i + 1}`, `pad:${r.name}`, AudioMemory.bytesOf(b))
         n++
@@ -1919,6 +1973,14 @@ refs.samplerPads.forEach((pad, i) => {
   pad.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return
     hidePadMenu()
+    if (e.metaKey || e.ctrlKey) {
+      const pinned = sampler.togglePin(i)
+      if (pinned != null) {
+        persistSampler()
+        log(`pad ${i + 1} ${pinned ? '★ pinned' : 'unpinned'}`)
+      }
+      return
+    }
     if (e.altKey) {
       sampler.clear(i)
       audioMem.release(`smp:${i + 1}`)
@@ -1942,7 +2004,8 @@ refs.samplerPads.forEach((pad, i) => {
     void (async () => {
       pad.classList.add('is-loading')
       try {
-        const buffer = await decodeFile(f)
+        const rawBuf = await decodeFile(f)
+        const buffer = trimLeadingSilence(engine.ctx, rawBuf, 0.35)
         const path = window.vibedeck?.filePathFor(f) ?? f.name
         const name = f.name.replace(/\.[^.]+$/, '')
         sampler.load(i, name, path, buffer, { stem: 'file', shortLabel: name.slice(0, 6).toUpperCase() })
