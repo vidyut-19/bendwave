@@ -187,12 +187,102 @@ export function grabStemSlice(
   }
 }
 
+function hzToNoteName(hz: number): string {
+  if (!hz || hz < 20 || hz > 400) return ''
+  const midi = Math.round(69 + 12 * Math.log2(hz / 440))
+  const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+  return `${names[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`
+}
+
+/** Find the punchiest isolated single 808 onset inside a bass stem (e.g. Baby Keem / trap 808s). */
+function findClean808Hit(bas: AudioBuffer, durSec: number): { t: number; peakHz: number } | null {
+  const sr = bas.sampleRate
+  const d = bas.getChannelData(0)
+  const hop = Math.max(64, Math.floor(sr * 0.01)) // 10ms RMS frames
+  const startFrame = Math.floor((bas.duration * 0.08 * sr) / hop)
+  const endFrame = Math.min(Math.floor(d.length / hop) - 10, Math.floor(((bas.duration - durSec - 0.5) * sr) / hop))
+  if (endFrame <= startFrame + 10) return null
+
+  const env = new Float32Array(endFrame - startFrame)
+  for (let f = 0; f < env.length; f++) {
+    const i0 = (startFrame + f) * hop
+    let sq = 0
+    for (let k = 0; k < hop; k += 2) {
+      const v = d[i0 + k]
+      sq += v * v
+    }
+    env[f] = Math.sqrt(sq / (hop / 2))
+  }
+
+  let bestIdx = -1
+  let bestScore = 0
+  const holdFrames = Math.max(8, Math.floor(Math.min(0.45, durSec * 0.6) / 0.01))
+  for (let f = 2; f < env.length - holdFrames; f++) {
+    // Require a clear onset jump from quiet/lower tail into a thick sustained 808 body
+    const jump = env[f] - Math.min(env[f - 1], env[f - 2])
+    if (jump < 0.08) continue
+    let body = 0
+    for (let k = 0; k < holdFrames; k++) body += env[f + k]
+    body /= holdFrames
+    const quietBonus = env[f - 2] < 0.08 ? 1.25 : 1.0
+    const score = (jump * 0.55 + body * 0.45) * quietBonus
+    if (score > bestScore && body > 0.16) {
+      bestScore = score
+      bestIdx = f
+    }
+  }
+  if (bestIdx < 0) return null
+  const t = Math.max(0, ((startFrame + bestIdx) * hop) / sr - 0.008)
+
+  // Estimate fundamental frequency (25..110 Hz) via normalized autocorrelation on 260ms sustained 808 body
+  const a0 = Math.floor((t + 0.08) * sr)
+  const win = Math.min(Math.floor(0.28 * sr), d.length - a0)
+  let peakHz = 0
+  if (win > 4096) {
+    const step = 4 // ~11 kHz effective
+    const effSr = sr / step
+    const minLag = Math.floor(effSr / 105)
+    const maxLag = Math.min(Math.floor(win / step) - 4, Math.ceil(effSr / 27))
+    const corr = new Float64Array(maxLag + 2)
+    let bestLag = 0
+    let bestCorr = -Infinity
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      let acc = 0
+      const lim = Math.floor(win / step) - lag
+      for (let i = 0; i < lim; i++) acc += d[a0 + i * step] * d[a0 + (i + lag) * step]
+      const norm = acc / Math.max(1, lim)
+      corr[lag] = norm
+      if (norm > bestCorr) {
+        bestCorr = norm
+        bestLag = lag
+      }
+    }
+    if (bestLag > minLag && bestLag < maxLag) {
+      // Parabolic peak interpolation for sub-0.2 Hz accuracy around 35-55 Hz
+      const y0 = corr[bestLag - 1]
+      const y1 = corr[bestLag]
+      const y2 = corr[bestLag + 1]
+      const denom = y0 - 2 * y1 + y2
+      const shift = Math.abs(denom) > 1e-12 ? 0.5 * ((y0 - y2) / denom) : 0
+      peakHz = effSr / (bestLag + Math.max(-0.5, Math.min(0.5, shift)))
+    } else if (bestLag > 0) {
+      peakHz = effSr / bestLag
+    }
+  }
+  return { t, peakHz }
+}
+
 /**
  * Auto-Harvest the 4 signature sonic gems of a loaded track:
- *   1) Wet Kick (DRM 1 beat, oneshot, dry, unpitched)
- *   2) Bass Wobble / 808 Groove (BAS 1 bar, sync loop, Camelot key-locked)
- *   3) Vocal Chop 1 (VOX 2 beats, oneshot, key-locked + Space FX)
- *   4) Vocal Chop 2 (or OTH synth stab if track is instrumental)
+ *   - On 808 / Trap tracks (subShare >= 0.42 or peakSubHz <= 48 & !4OTF):
+ *       1) Isolated 808 One-Shot (`808 D#1`, key-locked, full decay)
+ *       2) 1-Bar 808/Bass Groove Loop (`BAS 1B`, sync loop, key-locked)
+ *       3) Punchiest Drum/Snare Hit (`DRM HIT`)
+ *       4) Strongest Vocal Chop (`VOX 1`, key-locked + Space FX)
+ *   - On 4OTF Club / House / UKG tracks:
+ *       1) Wet Kick (`KICK`, DRM 1 beat)
+ *       2) Bass / UKG Wobble (`BAS 1B`, sync loop, key-locked)
+ *       3–4) Top 2 distinct Vocal Chops (`VOX 1` / `VOX 2`, or `OTH 2B` on instrumentals)
  */
 export function autoHarvestDeck(ctx: BaseAudioContext, deck: Deck): HarvestedClip[] {
   if (!deck.hasAudio || !deck.track) return []
@@ -207,12 +297,14 @@ export function autoHarvestDeck(ctx: BaseAudioContext, deck: Deck): HarvestedCli
   const nBars = Math.max(1, Math.floor((dur - offset) / barDur))
   const clips: HarvestedClip[] = []
 
-  // Prefer active DROP sections when available, else middle 15%..85% of the track
+  // Prefer active DROP sections when available, else middle 12%..88% of the track
   const drops = (track.sections ?? []).filter((s) => s.label === 'DROP' || s.label === 'GROOVE')
   const inDrop = (t: number) => drops.length === 0 || drops.some((s) => t >= s.tStart - 0.1 && t < s.tEnd - barDur)
 
   const bStart = Math.max(1, Math.floor(nBars * 0.12))
   const bEnd = Math.max(bStart + 1, Math.min(nBars - 1, Math.floor(nBars * 0.88)))
+  const fp = track.fingerprint
+  const is808Track = !!fp && (fp.subShare >= 0.42 || (fp.peakSubHz <= 48 && fp.fourOnFloor < 0.45))
 
   if (deck.stemCount === 4) {
     const drm = deck.getStemBuffer(0)
@@ -220,36 +312,64 @@ export function autoHarvestDeck(ctx: BaseAudioContext, deck: Deck): HarvestedCli
     const oth = deck.getStemBuffer(2)
     const vox = deck.getStemBuffer(3)
 
-    // 1. Wet Kick from DRM (1 beat on a strong downbeat)
+    // 0. For 808/Trap tracks (like Baby Keem), grab the cleanest isolated single 808 hit FIRST!
+    if (is808Track && bas) {
+      const hitDur = Math.min(0.95, Math.max(0.65, beatDur * 1.1))
+      const found = findClean808Hit(bas, hitDur)
+      if (found) {
+        const note = hzToNoteName(found.peakHz || fp?.peakSubHz || 0)
+        const tag = note ? `808 ${note}` : '808 HIT'
+        clips.push({
+          name: `${track.name} · ${tag}`,
+          shortLabel: tag,
+          stem: 'bass',
+          buffer: sliceAudioBuffer(ctx, bas, found.t, hitDur, 4),
+          sourceBpm: undefined, // keep natural 808 tail decay, only pitch-lock to Camelot key!
+          camelot: track.camelot,
+          beats: 1,
+          mode: 'oneshot',
+          keyLock: true,
+          fxSend: false
+        })
+      }
+    }
+
+    // 1. Wet Kick / Punchiest Drum Hit from DRM (scans all beats in active bars so snares/kicks aren't missed)
     if (drm) {
       let bestT = offset + bStart * barDur
       let bestScore = -1
+      const stepBeats = is808Track ? 1 : bpb
       for (let b = bStart; b < bEnd; b++) {
-        const t = offset + b * barDur
-        if (!inDrop(t)) continue
-        const attack = windowRmsPeak(drm, t, Math.min(0.08, beatDur * 0.25))
-        const body = windowRmsPeak(drm, t, beatDur * 0.7)
-        const sc = attack.peak * 0.6 + body.rms * 0.4
-        if (sc > bestScore) {
-          bestScore = sc
-          bestT = t
+        for (let sub = 0; sub < bpb; sub += stepBeats) {
+          const t = offset + b * barDur + sub * beatDur
+          if (!inDrop(t) || t + beatDur > drm.duration) continue
+          const attack = windowRmsPeak(drm, t, Math.min(0.08, beatDur * 0.25))
+          const body = windowRmsPeak(drm, t, Math.min(0.35, beatDur * 0.7))
+          const sc = body.rms * 0.65 + attack.peak * 0.35
+          if (sc > bestScore) {
+            bestScore = sc
+            bestT = t
+          }
         }
       }
-      clips.push({
-        name: `${track.name} · KICK`,
-        shortLabel: 'KICK',
-        stem: 'drums',
-        buffer: sliceAudioBuffer(ctx, drm, Math.max(0, bestT - 0.002), beatDur, 2),
-        sourceBpm: bpm,
-        camelot: track.camelot,
-        beats: 1,
-        mode: 'oneshot',
-        keyLock: false,
-        fxSend: false
-      })
+      if (bestScore > 0.03) {
+        const tag = is808Track ? 'DRM HIT' : 'KICK'
+        clips.push({
+          name: `${track.name} · ${tag}`,
+          shortLabel: tag,
+          stem: 'drums',
+          buffer: sliceAudioBuffer(ctx, drm, Math.max(0, bestT - 0.002), Math.min(0.65, beatDur), 2),
+          sourceBpm: bpm,
+          camelot: track.camelot,
+          beats: 1,
+          mode: 'oneshot',
+          keyLock: false,
+          fxSend: false
+        })
+      }
     }
 
-    // 2. Bass / UKG Wobble Loop from BAS (1 bar = 4 beats)
+    // 2. Bass / UKG Wobble / 808 Pattern Loop from BAS (1 bar = 4 beats)
     if (bas) {
       let bestT = offset + bStart * barDur
       let bestScore = -1
@@ -257,7 +377,6 @@ export function autoHarvestDeck(ctx: BaseAudioContext, deck: Deck): HarvestedCli
         const t = offset + b * barDur
         if (!inDrop(t)) continue
         const st = windowRmsPeak(bas, t, barDur)
-        // Reward both strong low-end energy and rhythmic wobble/modulation
         const sc = st.rms * (0.65 + 0.45 * Math.min(1.5, st.variance))
         if (sc > bestScore) {
           bestScore = sc
@@ -267,7 +386,7 @@ export function autoHarvestDeck(ctx: BaseAudioContext, deck: Deck): HarvestedCli
       if (bestScore > 0.02) {
         clips.push({
           name: `${track.name} · BAS 1BAR`,
-          shortLabel: 'BAS 1B',
+          shortLabel: is808Track ? '808 1B' : 'BAS 1B',
           stem: 'bass',
           buffer: sliceAudioBuffer(ctx, bas, bestT, barDur, 5),
           sourceBpm: bpm,
@@ -280,9 +399,9 @@ export function autoHarvestDeck(ctx: BaseAudioContext, deck: Deck): HarvestedCli
       }
     }
 
-    // 3 & 4. Top 2 distinct Vocal Chops (2 beats each, >= 4 bars apart)
+    // 3 & 4. Vocal Chops (fills remaining slots up to 4 clips total)
     const voxCands: { t: number; score: number }[] = []
-    if (vox) {
+    if (vox && clips.length < 4) {
       const halfBar = beatDur * 2
       for (let b = bStart; b < bEnd; b++) {
         for (let sub = 0; sub < 2; sub++) {
@@ -311,7 +430,7 @@ export function autoHarvestDeck(ctx: BaseAudioContext, deck: Deck): HarvestedCli
             keyLock: true,
             fxSend: true
           })
-          if (picked.length >= 2) break
+          if (clips.length >= 4) break
         }
       }
     }
