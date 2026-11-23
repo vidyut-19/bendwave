@@ -1,4 +1,4 @@
-# vibedeck — run it tonight
+# bendwave — run it tonight
 
 Zero-to-mixing guide. Feature reference lives in [README.md](README.md); deep docs in
 [docs/](docs/). This page is just: get it running, plug in the K.O. II, play.
@@ -9,21 +9,21 @@ Zero-to-mixing guide. Feature reference lives in [README.md](README.md); deep do
 
 ### From the DMG (recommended)
 
-1. Copy **vibedeck.app** to `/Applications`
+1. Copy **bendwave.app** to `/Applications`
 2. First launch: **right-click → Open** (it's unsigned — macOS remembers after that)
 3. Done. Skip to §2.
 
 ### From source (development)
 
 ```bash
-git clone git@github.com:vidyut-19/vibedeck.git
-cd vibedeck
+git clone git@github.com:vidyut-19/bendwave.git
+cd bendwave
 npm install
 npm run dev
 ```
 
 Requires Node 18+. Builds a fresh DMG anytime with `npm run dist`
-(→ `release/vibedeck-<version>-arm64.dmg`).
+(→ `release/bendwave-<version>-arm64.dmg`).
 
 ## 2. First-launch setup (in the app, one time)
 
@@ -51,7 +51,7 @@ One-time setup:
 1. **K.O. II**: SHIFT+ERASE → `511` → ENTER — live-monitors USB audio
 2. **macOS**: Audio MIDI Setup → `+` → *Create Aggregate Device* → tick **EP-133
    first**, then *Built-in Output* → right-click it → *Use This Device For Sound Output*
-3. **vibedeck**: mixer panel → **SPLIT CUE** on (`X`)
+3. **bendwave**: mixer panel → **SPLIT CUE** on (`X`)
 
 Check: track on deck A plays through the speaker; deck B's **CUE** button (`/`) puts
 B in your headphones only. Full details: [docs/hardware.md](docs/hardware.md).
@@ -91,7 +91,7 @@ Full map + the punch-in-FX-as-outboard trick: [docs/ko2-mapping.md](docs/ko2-map
    fader via `mix.crossfade`)
 5. Take A out with flavor: sweep A's **FLT** toward high-pass, hold `G`
    (**echo-out**), tap `4` (**1-beat roll**), release, fade A's VOL down
-6. `V` — **record** the whole thing to `~/Music/vibedeck/`
+6. `V` — **record** the whole thing to `~/Music/bendwave/`
 
 Hot cues: `A S D F` (deck A) / `J K L ;` (deck B); Shift+key sets them. Loops:
 `4–7` (A) / `B N M '` (B). Sampler: drop samples on the mixer pads, fire with
@@ -103,7 +103,7 @@ Shift+1–8 or velocity pads. Full key map: [README.md](README.md#keyboard-map).
 |---|---|
 | No sound | Aggregate device selected as system output? EP-133 ticked **first**? |
 | Cue hears everything / nothing | SPLIT CUE on? Deck CUE button lit? |
-| "vibedeck is damaged" | Unsigned app: right-click → Open |
+| "bendwave is damaged" | Unsigned app: right-click → Open |
 | No stems faders | Header → **+ stems** finished? Track needs re-load after install |
 | K.O. II pads do nothing | MIDI panel shows the device? Preset loaded? Pad channel set to 1? |
 | Knobs won't map | They may not transmit — confirm with **watch midi** |

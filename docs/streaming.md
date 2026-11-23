@@ -15,13 +15,13 @@ Probably yes — and the difference is the contract, not the tech:
   (requires listeners to hold SoundCloud Go+; streams arrive as 256k AAC; Serato analyzes
   BPM/key on load and runs its realtime stems). Partner agreements explicitly license
   DJ-grade processing of the audio, stems included.
-- **vibedeck** uses the **public API** (Artist Pro keys). The public API Terms of Use
+- **bendwave** uses the **public API** (Artist Pro keys). The public API Terms of Use
   explicitly forbid feeding API content to stem separation. Same catalog, different front
-  door, stricter rules. That's why streamed tracks in vibedeck get beatgrids, sync, waveforms
+  door, stricter rules. That's why streamed tracks in bendwave get beatgrids, sync, waveforms
   and cue points (all fine) but the stem pipeline stays off — enforced in code via
   `stemsAllowed: false`.
 
-If vibedeck ever grows into something distributed, the path to "Serato-style stems on
+If bendwave ever grows into something distributed, the path to "Serato-style stems on
 SoundCloud" is a partnership conversation with SoundCloud, not a technical one.
 
 ## The matrix
@@ -72,7 +72,7 @@ From the API Terms of Use:
    `http://localhost:8931/callback` exactly.
 2. Copy `soundcloud.config.example.json` → `soundcloud.config.json` in the repo root
    (gitignored) and fill in your `clientId` / `clientSecret`.
-3. In vibedeck: STREAM panel → **connect SoundCloud** → browser opens → authorize → back in
+3. In bendwave: STREAM panel → **connect SoundCloud** → browser opens → authorize → back in
    the app. Tokens are stored encrypted (Keychain via Electron safeStorage) and auto-refresh.
 4. Search, click a result. The track streams (progressive MP3), decodes to an in-memory
    AudioBuffer, gets a browser beatgrid, and loads onto a deck. Crate entries carry an `SC`

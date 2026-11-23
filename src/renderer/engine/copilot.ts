@@ -311,7 +311,7 @@ export function recommendNext(
       const dBr = Math.abs(t.vibe.brightness - srcVibe.brightness)
       if (vibeMode === 'flow') {
         vibeScore = Math.max(0, 100 - (Math.abs(dE) * 85 + dB * 30 + dBr * 25 + dSw * 140))
-        vibeNote = Math.abs(dE) < 0.12 ? 'vibe match' : dE > 0 ? 'slight lift' : 'slight dip'
+        vibeNote = Math.abs(dE) < 0.12 ? 'groove match' : dE > 0 ? 'slight lift' : 'slight dip'
       } else if (vibeMode === 'lift') {
         const target = 0.16
         vibeScore = Math.max(0, 100 - Math.abs(dE - target) * 150 - dSw * 120)

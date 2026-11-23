@@ -202,7 +202,7 @@ export async function createKL(ctx: AudioContext, buffer: AudioBuffer, dest: Aud
       return await SignalsmithKL.create(ctx, buffer, dest)
     } catch (e) {
       signalsmithFailed = true
-      console.warn('vibedeck: signalsmith-stretch unavailable, using WSOLA fallback', e)
+      console.warn('bendwave: signalsmith-stretch unavailable, using WSOLA fallback', e)
     }
   }
   return WorkletKL.create(ctx, buffer, dest)

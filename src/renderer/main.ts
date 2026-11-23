@@ -2034,7 +2034,7 @@ function tick(): void {
   try {
     tickBody()
   } catch (err) {
-    console.error('[vibedeck tick]', err)
+    console.error('[bendwave tick]', err)
   }
 }
 
